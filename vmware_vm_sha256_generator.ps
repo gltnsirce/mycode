@@ -1,0 +1,17 @@
+#
+#This PowerShell script generates a SHA256-based manifest file (.mf) for a set of VxRail Manager deployment files. Manifest files are commonly used to verify file integrity during deployments or transfers.
+# Files Included:
+#   The script assumes the following VxRail Manager files are present in the same directory:
+#     VxRail Manager-old.ovf
+#     VxRail Manager-old-1.vmdk
+#     VxRail Manager-old-2.vmdk
+#     VxRail Manager-old-3.vmdk
+#     VxRail Manager-old-4.nvram
+#
+
+$files = @("VxRail Manager-old.ovf", "VxRail Manager-old-1.vmdk", "VxRail Manager-old-2.vmdk", "VxRail Manager-old-3.vmdk", "VxRail Manager-old-4.nvram") 
+$mfContent = $files | ForEach-Object {
+    $hash = (Get-FileHash $_ -Algorithm SHA256).Hash
+    "SHA256($_) = $hash"
+}
+$mfContent | Out-File "VxRail Manager-old.mf" -Encoding UTF8
