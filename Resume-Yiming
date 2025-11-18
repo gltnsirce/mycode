@@ -1,0 +1,143 @@
+
+Yiming Yin
+
+Email: yiming.yin@outlook.com
+Mobile: (+86) 151 4117 3003
+Github: https://github.com/gltnsirce/mycode
+
+
+Work experience:       Dell EMC + Microsoft Azure + Cisco + HP, Support + L3 Escalation engineer
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+    Dec 2018 to Oct 2025			Dell EMC, Product Escalation Engineer 
+    
+        •	Dell VxRail and Apex Cloud Platform products global L3 escalation engineer, handle escalation cases for technical engineers in worldwide level. 
+        •	Engineering team lab admin, response for manage the lab, main task:
+              o	Networking and virtualization management
+              o	Systems and scenarios establish
+              o	Lifecycle management
+              o	Data backup and restore include the CI/CD system, product test system and all business system 
+              o	The plan for decommissioning existing equipment and adding new equipment
+              o	Security management based on the worldwide policy and hardening the system, monitor the CVE
+        •	Investigate and analysis the problem in source code to determine the root cause, provide the workaround to support engineer team, engage development engineer to fix the problem.
+        •	Improve product quality:
+              o	Product releases management
+              o	Official documents management, such as draft, writing, review, and publishment 
+              o	KB articles management include review, publish, and writing
+              o	New function review and leading a test team for new feature testing
+        •	Support Key account for HCI product, such as:
+              o	Australia and New Zealand Banking Group limitation, resolve this customer's storage performance issues and ensure that the product upgrade is completed smoothly
+              o	UPS (United Parcel Services), continue to follow up user needs, enhance product quality according to user feedback and user fault cases, and continue to solve users' network communication problems.
+              o	Energizer, from the green field of the production system to the system expansion, I continuously follow up the needs of users, modify product accessories and settings, and solve the performance problems of the user environment.
+              o	Government of Singapore, solve the performance problems of the government's human resources system and ERP systems in multiple departments.
+              o	The National University of Malaysia, the hyperconverged system has been upgraded many times over the years.
+
+    June 2018 to Dec 2018		Microsoft, Support Escalation Engineer
+    
+        •	Microsoft CSS department for Azure:
+              o	Microsoft Azure Extra-ID product technical support engineer
+              o	Microsoft Azure VM product technical support engineer
+              o	Provides technical support service for global customers
+              o	Handle and follow up the escalation ticket from first line support engineer.
+    
+    Aug 2013 to June 2018		Cisco System, Senior Support engineer 
+    
+        •	Take and follow up urgent escalation ticket in APJC and countries of the Middle East and Central Asia for Cisco USC product.
+        •	Cisco DC support engineer and follow APJC customer’s technical issues.
+        •	Team management:
+              o New hire training
+              o	Partner training
+              o	Daily work Q&A
+              o	Interview
+        •	Lab management, lead branch lab team and promote the progress of this project.
+              o	Allocate laboratory resources according to the different departmental needs of the branch company
+              o	Networking and virtualization management
+              o	Systems and scenarios establish for the customer support team and advance service team
+              o	Lifecycle management include the software and hardware
+        •	Worldwide level urgent case handling, guiding the troubleshooting and investigation of engineers. 
+        •	Addressing the issue of consultations between different departments.
+        •	Backbone for Japan and Korea support team response for Q&A in daily work.
+    
+    October 2008 to Aug 2013	Hewlett-Packard, Technical support Team Leader
+    
+        •	Management of a professional support team, including skills development and performance management.
+        •	KPI analysis include the whole team and members.
+        •	As team leader, managing a team with 20 members, response for call center performance management and tracking, new hire training and Q&A. 
+        •	While helping to deal with Hong Kong and Taiwan case.
+        •	HP Proliant server, storage products, such as FC switch, NAS, SAN, Tape drive, and Tape Libraries and so on.
+
+Skill sets
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+    	HCI and Virtualization
+        o	EMC Hyper-Converged Infrastructure solution, including the VxRail and VCF on VxRail
+        o	Dell APEX Cloud platform for Microsoft Azure and Dell APEX cloud platform for Redhat Openshift
+        o	VMware virtualization, including but not limited ESXi, vSAN, virtual Switch, DRS, vMotion, HA and so on
+        o	VMware Cloud Foundation solution
+        o	Virtual machine lifecycle management
+        o	Dell private cloud solution
+        o	Nutanix
+        o	Linux KVM
+        o	Docker
+    	Cloud
+        o	Microsoft Azure Cloud service such as computing, networking, storage
+        o	DNS, CDN
+        o	AWS S3, EC2, VPC, and so on
+    	Traditional / On-primes Solution/Product
+        o	Cisco UCS, HPE Proliant, Del EMC PowerEdge x86 server, include software, driver and firmware management
+        o	Brocade and Cisco FC switch
+        o	SAN and NAS storage system
+        o	Tape drive and library backup storage system and Disaster recovery (DR)
+        o	Multiple backing up software and solutions, such as Cohesity, Data Protect Enterprise, Networker, Avamar and so on
+    	Network
+        o	Network L2 protocols such as VLAN/VRRP/HSRP/STP/CDP/LLDP
+        o	Packet capture and debugging tools such as WireShark/tcpdump//Fiddler
+        o	Postman/curl API testing
+        o	Network troubleshooting and tools, such as Wireshark, TCPdump, ping, traceroute, telnet
+    	Operating System
+        o	Linux file system management, Linux host network control, Linux iptables
+        o	Multiple release or brunch of Linux operation systems, such as Redhat, CentOS, Fedora, Ubuntu, SuSE
+        o	Network bonding, teaming, 
+        o	VMware ESXi
+        o	Windows Server and Microsoft Azure Stack HCI system
+    	Storage
+        o	FC and FCoE protocols
+        o	HPE 3Par storage system
+        o	Block storage, VMware vSAN
+        o	Brocade and Cisco FC switch
+        o	Dell EMC VMAX, PowerFlex, PowerStore and so on
+        o	Multiple storage protocols such as S3, FTP, NFS, iSCSI, SCSI, CIFS, SAMBA, and so on.
+        o	Storage architecture such as offline storage system, online storage system and so on.
+        o	Multiple file system, such as NTFS, FAT, ext3, ext4, btrfs, xfs, Amazon S3 and so on.
+        o	Storage performance analysis. Tools for performance troubleshooting such as HCIbench, VDBench, iperf, dd, and so on
+        o	Storage performance data reports in Grafana UI
+    	Web service troubleshooting and tools, such as cURL, Postman, dig, nslookup
+    	Development
+        o	Jira, Github, and confluence system for IT development solution
+        o	Python and Java code, can debug the source code to narrow down the issue and problem
+
+
+Education and Certificates
+--------------------------------------------------------------------------------------------------------------------------------------------------------------    
+    •	2004 to 2008, CCUT, Electronic Commercial major, Bachelor of Engineering degree
+        o	GPA in top 5 percentage
+    •	ITIL Foundation
+    •	Six Sigma Yellow Belt
+    •	VMware VCP
+    •	RedHat	RHCSA
+    •	Nutanix	NPSE / NPP / NPSR / NPSS
+    •	Dell EMC VxRail Experts
+
+
+Honors & Awards
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+    •	Awards in Dell EMC and nominated by senior director/manager, IM/RM manager/director and VMware development department multiple times
+    •	Cisco APJC VP nominated Employee of the Year
+    •	Hewlett Packard monthly technical golden star multiple times 
+    •	Hewlett Packard best performance leader many times
+
+
+Hobbies
+--------------------------------------------------------------------------------------------------------------------------------------------------------------
+    •	Riding bicycle, mountain bike and gravel bike
+    •	Hiking
+    •	Basketball
+    •	Assembled models, such as military models and science fiction models
