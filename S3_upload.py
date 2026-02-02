@@ -1,19 +1,45 @@
-import uuid
+import boto3
 import hashlib
+import os
+from datetime import datetime
+from botocore.exceptions import ClientError
 
-def get_optimized_log_path(log_type, timestamp, sequence):
+def generate_s3_path(log_type, file_content, sequence):
     """
-    生成优化后的日志文件路径，避免热点
+    生成符合 S3 最佳实践的路径：[hash_prefix]/[log_type]/[YYYYMMDD]/[filename]
     """
-    # 方法1：使用UUID的前几位
-    random_prefix = str(uuid.uuid4())[:3]  # 如 'a3f'
+    # 1. 生成基于 sequence 的哈希前缀 (取前 3 位足够分散几千个分片)
+    hash_prefix = hashlib.md5(str(sequence).encode()).hexdigest()[:3]
     
-    # 方法2：基于序列号的哈希
-    hash_prefix = hashlib.md5(str(sequence).encode()).hexdigest()[:2]  # 如 '8e'
+    # 2. 获取当前日期
+    datestr = datetime.now().strftime('%Y%m%d')
     
-    # 方法3：基于时间的反转（分散按分钟的写入）
-    minute = timestamp.split(':')[1]  # 获取分钟数
-    time_prefix = f"{int(minute):02d}"  # 如 '15'
+    # 3. 构造路径
+    # 路径示例: a3f/error_logs/20260202/log_1024.log
+    return f"{hash_prefix}/{log_type}/{datestr}/log_{sequence}.log"
+
+def upload_to_s3(bucket_name, log_type, content, sequence):
+    s3_client = boto3.client('s3')
     
-    # 组合使用
-    return f"{random_prefix}/logs/{log_type}/{timestamp}/{sequence}.log"
+    target_path = generate_s3_path(log_type, content, sequence)
+    
+    try:
+        # 直接上传字符串内容到 S3
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=target_path,
+            Body=content,
+            ContentType='text/plain'
+        )
+        print(f"Successfully uploaded to: s3://{bucket_name}/{target_path}")
+    except ClientError as e:
+        print(f"Upload failed: {e}")
+        return False
+    return True
+
+# --- 使用示例 ---
+if __name__ == "__main__":
+    MY_BUCKET = "your-app-logs-bucket"
+    LOG_DATA = "yyyy-mm-dd hh:mm:ss - ERROR - Database connection timeout."
+    
+    upload_to_s3(MY_BUCKET, "api_logs", LOG_DATA, sequence=45678)
