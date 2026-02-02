@@ -5,6 +5,10 @@
 # 
 # 成本考虑：虽然路径长短不影响存储费，但建议路径不要包含太多层级（深度过大），保持在 5-8 层左右最利于维护。
 #
+# 确保你的机器已经配置了 AWS 凭证（通过 aws configure 或 环境变量）。
+# 
+# 如果日志文件非常大（超过 100MB），建议改用 s3_client.upload_file，它会自动处理分段上传（Multipart Upload）。
+#
 
 import boto3
 import hashlib
