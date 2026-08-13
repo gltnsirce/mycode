@@ -1,0 +1,360 @@
+---
+# ============================================================
+# Kubernetes Worker Node Join
+# File: playbooks/08-worker-join.yml
+#
+# Purpose:
+#   1. Prepare Kubernetes worker join information on mgmt-node
+#   2. Verify worker nodes
+#   3. Join worker-node1 and worker-node2 to Kubernetes
+# ============================================================
+
+
+# ============================================================
+# PLAY 1
+# Prepare Kubernetes worker join information
+# ============================================================
+
+- name: Prepare Kubernetes worker join information
+  hosts: mgmt-node
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # --------------------------------------------------------
+    # Verify Kubernetes API Server
+    # --------------------------------------------------------
+
+    - name: Verify Kubernetes API Server
+      ansible.builtin.wait_for:
+        host: "{{ ansible_facts['default_ipv4']['address'] }}"
+        port: 6443
+        state: started
+        timeout: 10
+      when: not ansible_check_mode
+
+
+    # --------------------------------------------------------
+    # Create Kubernetes bootstrap token
+    # --------------------------------------------------------
+
+    - name: Create Kubernetes bootstrap token
+      ansible.builtin.command:
+        cmd: kubeadm token create
+      register: kubeadm_token_result
+      changed_when: true
+      when: not ansible_check_mode
+
+
+    # --------------------------------------------------------
+    # Calculate Kubernetes CA certificate hash
+    # --------------------------------------------------------
+
+    - name: Calculate Kubernetes CA certificate hash
+      ansible.builtin.shell:
+        cmd: |
+          openssl x509 -pubkey \
+            -in /etc/kubernetes/pki/ca.crt \
+            | openssl rsa -pubin -outform der 2>/dev/null \
+            | openssl dgst -sha256 -hex \
+            | sed 's/^.* //'
+      register: kubeadm_ca_hash_result
+      changed_when: false
+      when: not ansible_check_mode
+
+
+    # --------------------------------------------------------
+    # Verify Kubernetes CA certificate hash
+    # --------------------------------------------------------
+
+    - name: Verify Kubernetes CA certificate hash
+      ansible.builtin.assert:
+        that:
+          - kubeadm_ca_hash_result.stdout | length == 64
+          - kubeadm_ca_hash_result.stdout is match('^[a-f0-9]{64}$')
+        fail_msg: "Invalid Kubernetes CA certificate hash."
+        success_msg: "Kubernetes CA certificate hash is valid."
+      when: not ansible_check_mode
+
+
+    # --------------------------------------------------------
+    # Build Kubernetes worker join command
+    # --------------------------------------------------------
+
+    - name: Build Kubernetes worker join command
+      ansible.builtin.set_fact:
+        worker_join_command: >-
+          kubeadm join
+          {{ ansible_facts['default_ipv4']['address'] }}:6443
+          --token {{ kubeadm_token_result.stdout | trim }}
+          --discovery-token-ca-cert-hash
+          sha256:{{ kubeadm_ca_hash_result.stdout | trim }}
+      when: not ansible_check_mode
+
+
+    # --------------------------------------------------------
+    # Display check mode information
+    # --------------------------------------------------------
+
+    - name: Display check mode information
+      ansible.builtin.debug:
+        msg:
+          - "CHECK MODE: Kubernetes worker join information was not generated."
+          - "This is expected because kubeadm token creation is a state-changing operation."
+          - "Run without --check to generate the real join command."
+      when: ansible_check_mode
+
+
+    # --------------------------------------------------------
+    # Display generated worker join command
+    # --------------------------------------------------------
+
+    - name: Display worker join command
+      ansible.builtin.debug:
+        msg:
+          - "Kubernetes API Server: {{ ansible_facts['default_ipv4']['address'] }}:6443"
+          - "Worker join command:"
+          - "{{ worker_join_command }}"
+      when:
+        - not ansible_check_mode
+        - worker_join_command is defined
+
+
+# ============================================================
+# PLAY 2
+# Join Kubernetes worker nodes
+# ============================================================
+
+- name: Join Kubernetes worker nodes
+  hosts: worker-node1:worker-node2
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # --------------------------------------------------------
+    # Display worker hostname and address
+    # --------------------------------------------------------
+
+    - name: Display worker hostname and address
+      ansible.builtin.debug:
+        msg:
+          - "Worker hostname: {{ inventory_hostname }}"
+          - "Worker address: {{ ansible_facts['default_ipv4']['address'] }}"
+
+
+    # --------------------------------------------------------
+    # Verify worker architecture
+    # --------------------------------------------------------
+
+    - name: Verify worker architecture
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['architecture'] == "x86_64"
+        fail_msg: >-
+          Unsupported worker architecture:
+          {{ ansible_facts['architecture'] }}
+        success_msg: >-
+          Worker architecture is {{ ansible_facts['architecture'] }}.
+
+
+    # --------------------------------------------------------
+    # Verify worker IP
+    # --------------------------------------------------------
+
+    - name: Verify worker IP
+      ansible.builtin.assert:
+        that:
+          - >
+            ansible_facts['default_ipv4']['address']
+            in
+            [
+              "192.168.2.33",
+              "192.168.2.34"
+            ]
+        fail_msg: >-
+          Unexpected worker IP address:
+          {{ ansible_facts['default_ipv4']['address'] }}
+        success_msg: "Worker IP address is correct."
+
+
+    # --------------------------------------------------------
+    # Ensure containerd is installed
+    # --------------------------------------------------------
+
+    - name: Ensure containerd is installed
+      ansible.builtin.apt:
+        name: containerd
+        state: present
+        update_cache: false
+
+
+    # --------------------------------------------------------
+    # Ensure containerd is running
+    # --------------------------------------------------------
+
+    - name: Ensure containerd is running
+      ansible.builtin.service:
+        name: containerd
+        state: started
+        enabled: true
+
+
+    # --------------------------------------------------------
+    # Ensure kubeadm is installed
+    # --------------------------------------------------------
+
+    - name: Ensure kubeadm is installed
+      ansible.builtin.apt:
+        name: kubeadm
+        state: present
+        update_cache: false
+
+
+    # --------------------------------------------------------
+    # Ensure kubelet is installed
+    # --------------------------------------------------------
+
+    - name: Ensure kubelet is installed
+      ansible.builtin.apt:
+        name: kubelet
+        state: present
+        update_cache: false
+
+
+    # --------------------------------------------------------
+    # Test Kubernetes API Server TCP port
+    # --------------------------------------------------------
+
+    - name: Test Kubernetes API Server TCP port
+      ansible.builtin.wait_for:
+        host: "192.168.2.32"
+        port: 6443
+        state: started
+        timeout: 10
+      when: not ansible_check_mode
+
+
+    # --------------------------------------------------------
+    # Check whether worker is already joined
+    # --------------------------------------------------------
+
+    - name: Check whether worker is already joined
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: worker_kubelet_config
+
+
+    # --------------------------------------------------------
+    # Get worker join command from mgmt-node
+    # --------------------------------------------------------
+
+    - name: Get worker join command from mgmt-node
+      ansible.builtin.set_fact:
+        worker_join_command: "{{ hostvars['mgmt-node']['worker_join_command'] }}"
+      when:
+        - not ansible_check_mode
+        - not worker_kubelet_config.stat.exists
+
+
+    # --------------------------------------------------------
+    # Verify worker join command exists
+    # --------------------------------------------------------
+
+    - name: Verify worker join command exists
+      ansible.builtin.assert:
+        that:
+          - worker_join_command is defined
+          - worker_join_command | length > 0
+        fail_msg: >-
+          Kubernetes worker join command was not received
+          from mgmt-node.
+        success_msg: "Kubernetes worker join command is available."
+      when:
+        - not ansible_check_mode
+        - not worker_kubelet_config.stat.exists
+
+
+    # --------------------------------------------------------
+    # Join worker node to Kubernetes
+    # --------------------------------------------------------
+
+    - name: Join worker node to Kubernetes
+      ansible.builtin.command:
+        cmd: "{{ worker_join_command }}"
+      register: kubeadm_join_result
+      changed_when: true
+      when:
+        - not ansible_check_mode
+        - not worker_kubelet_config.stat.exists
+
+
+    # --------------------------------------------------------
+    # Enable kubelet
+    # --------------------------------------------------------
+
+    - name: Enable kubelet
+      ansible.builtin.systemd:
+        name: kubelet
+        enabled: true
+
+
+    # --------------------------------------------------------
+    # Start kubelet
+    # --------------------------------------------------------
+
+    - name: Start kubelet
+      ansible.builtin.systemd:
+        name: kubelet
+        state: started
+      when:
+        - not ansible_check_mode
+        - worker_kubelet_config.stat.exists or kubeadm_join_result is defined
+
+
+    # --------------------------------------------------------
+    # Wait for kubelet to become active
+    # --------------------------------------------------------
+
+    - name: Wait for kubelet to become active
+      ansible.builtin.command:
+        cmd: systemctl is-active kubelet
+      register: kubelet_status
+      retries: 10
+      delay: 3
+      until: kubelet_status.rc == 0
+      changed_when: false
+      when: not ansible_check_mode
+
+
+    # --------------------------------------------------------
+    # Show check mode result
+    #
+    # IMPORTANT:
+    # Do NOT reference kubeadm_join_result.stdout_lines here.
+    # kubeadm join is skipped in check mode.
+    # --------------------------------------------------------
+
+    - name: Show kubeadm join result in check mode
+      ansible.builtin.debug:
+        msg:
+          - "Worker node: {{ inventory_hostname }}"
+          - "CHECK MODE: kubeadm join was skipped."
+          - "No worker join command was executed."
+      when: ansible_check_mode
+
+
+    # --------------------------------------------------------
+    # Show actual kubeadm join result
+    # --------------------------------------------------------
+
+    - name: Show kubeadm join result
+      ansible.builtin.debug:
+        msg:
+          - "Worker node: {{ inventory_hostname }}"
+          - "kubeadm join completed successfully."
+          - "{{ kubeadm_join_result.stdout_lines | default([]) }}"
+      when:
+        - not ansible_check_mode
+        - kubeadm_join_result is defined
