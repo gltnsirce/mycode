@@ -1,0 +1,74 @@
+---
+- name: Initialize Kubernetes control plane
+  hosts: k8s_control_plane
+  become: true
+
+  vars:
+    kubernetes_version: "v1.35.7"
+    control_plane_ip: "192.168.2.32"
+    pod_network_cidr: "10.244.0.0/16"
+
+    # China mainland image registry
+    kubernetes_image_repository: "registry.cn-hangzhou.aliyuncs.com/google_containers"
+
+  tasks:
+
+    # ==========================================================
+    # 1. Check whether kubeadm init has already been completed
+    # ==========================================================
+
+    - name: Check if Kubernetes control plane is already initialized
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      register: kubeadm_admin_conf
+
+    # ==========================================================
+    # 2. Verify Kubernetes images are available
+    # ==========================================================
+
+    - name: Pull Kubernetes control plane images
+      ansible.builtin.command:
+        cmd: >
+          kubeadm config images pull
+          --kubernetes-version {{ kubernetes_version }}
+          --image-repository {{ kubernetes_image_repository }}
+      when: not kubeadm_admin_conf.stat.exists
+
+    # ==========================================================
+    # 3. Initialize Kubernetes control plane
+    # ==========================================================
+
+    - name: Initialize Kubernetes control plane
+      ansible.builtin.command:
+        cmd: >
+          kubeadm init
+          --apiserver-advertise-address={{ control_plane_ip }}
+          --pod-network-cidr={{ pod_network_cidr }}
+          --kubernetes-version={{ kubernetes_version }}
+          --image-repository={{ kubernetes_image_repository }}
+      when: not kubeadm_admin_conf.stat.exists
+
+    # ==========================================================
+    # 4. Create kubeconfig directory
+    # ==========================================================
+
+    - name: Create .kube directory
+      ansible.builtin.file:
+        path: /home/ansible/.kube
+        state: directory
+        owner: ansible
+        group: ansible
+        mode: "0700"
+
+    # ==========================================================
+    # 5. Copy admin kubeconfig
+    # ==========================================================
+
+    - name: Copy admin kubeconfig
+      ansible.builtin.copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ansible/.kube/config
+        remote_src: true
+        owner: ansible
+        group: ansible
+        mode: "0600"

@@ -1,0 +1,540 @@
+---
+- name: Install Calico CNI v3.32.1
+  hosts: mgmt-node
+  become: true
+  gather_facts: true
+
+  vars:
+    calico_version: "v3.32.1"
+
+    calico_registry: "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io"
+
+    calico_manifest_local: "/ansible/manifests/calico-v3.32.1.yaml"
+
+    calico_manifest_remote: "/tmp/calico-v3.32.1.yaml"
+
+    kubeconfig: "/etc/kubernetes/admin.conf"
+
+    calico_pod_cidr: "10.244.0.0/16"
+
+    calico_cni_image: "{{ calico_registry }}/calico/cni:{{ calico_version }}"
+    calico_node_image: "{{ calico_registry }}/calico/node:{{ calico_version }}"
+    calico_controller_image: "{{ calico_registry }}/calico/kube-controllers:{{ calico_version }}"
+
+
+  tasks:
+
+    # =========================================================
+    # 1. Check Kubernetes
+    # =========================================================
+
+    - name: Check Kubernetes cluster
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          cluster-info
+      register: kubernetes_cluster
+      changed_when: false
+
+    - name: Display Kubernetes cluster
+      ansible.builtin.debug:
+        var: kubernetes_cluster.stdout_lines
+
+
+    - name: Display Kubernetes nodes
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          get nodes -o wide
+      register: kubernetes_nodes
+      changed_when: false
+
+    - name: Display Kubernetes nodes
+      ansible.builtin.debug:
+        var: kubernetes_nodes.stdout_lines
+
+
+    # =========================================================
+    # 2. Ensure containerd
+    # =========================================================
+
+    - name: Ensure containerd is running
+      ansible.builtin.systemd:
+        name: containerd
+        state: started
+        enabled: true
+
+
+    # =========================================================
+    # 3. Check kubeconfig
+    # =========================================================
+
+    - name: Check kubeconfig
+      ansible.builtin.stat:
+        path: "{{ kubeconfig }}"
+      register: kubeconfig_stat
+
+    - name: Fail if kubeconfig does not exist
+      ansible.builtin.fail:
+        msg: "Kubeconfig does not exist: {{ kubeconfig }}"
+      when: not kubeconfig_stat.stat.exists
+
+
+    # =========================================================
+    # 4. Check local Calico manifest
+    # =========================================================
+
+    - name: Check local Calico manifest
+      ansible.builtin.stat:
+        path: "{{ calico_manifest_local }}"
+      delegate_to: localhost
+      become: false
+      register: calico_manifest_stat
+
+    - name: Fail if Calico manifest does not exist
+      ansible.builtin.fail:
+        msg: >
+          Calico manifest does not exist on Ansible control node:
+          {{ calico_manifest_local }}
+      when: not calico_manifest_stat.stat.exists
+
+
+    # =========================================================
+    # 5. Copy manifest to mgmt-node
+    # =========================================================
+
+    - name: Copy Calico manifest
+      ansible.builtin.copy:
+        src: "{{ calico_manifest_local }}"
+        dest: "{{ calico_manifest_remote }}"
+        owner: root
+        group: root
+        mode: "0644"
+
+
+    # =========================================================
+    # 6. Verify Calico image references
+    # =========================================================
+
+    - name: Check Calico image references
+      ansible.builtin.shell:
+        cmd: >
+          grep "image:" "{{ calico_manifest_remote }}" |
+          grep "calico"
+      register: calico_manifest_images
+      changed_when: false
+
+    - name: Display Calico image references
+      ansible.builtin.debug:
+        var: calico_manifest_images.stdout_lines
+
+
+    # =========================================================
+    # 7. Verify no quay.io reference
+    # =========================================================
+
+    - name: Verify no quay.io Calico images remain
+      ansible.builtin.shell:
+        cmd: |
+          if grep -q "quay.io/calico" "{{ calico_manifest_remote }}"; then
+            echo "ERROR: quay.io/calico reference found"
+            exit 1
+          fi
+          exit 0
+      register: quay_check
+      changed_when: false
+
+
+    # =========================================================
+    # 8. Verify Huawei mirror
+    # =========================================================
+
+    - name: Verify Huawei Cloud Calico images
+      ansible.builtin.shell:
+        cmd: >
+          grep "image:" "{{ calico_manifest_remote }}" |
+          grep "swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/calico/"
+      register: mirror_check
+      changed_when: false
+
+    - name: Display Huawei mirror references
+      ansible.builtin.debug:
+        var: mirror_check.stdout_lines
+
+
+    # =========================================================
+    # 9. Verify Pod CIDR
+    # =========================================================
+
+    - name: Verify Calico Pod CIDR
+      ansible.builtin.shell:
+        cmd: >
+          grep -n -A2 "CALICO_IPV4POOL_CIDR"
+          "{{ calico_manifest_remote }}"
+      register: calico_cidr
+      changed_when: false
+
+    - name: Display Calico Pod CIDR
+      ansible.builtin.debug:
+        var: calico_cidr.stdout_lines
+
+
+    # =========================================================
+    # 10. Check containerd images
+    #
+    # IMPORTANT:
+    # Do NOT use:
+    #
+    #   ctr images check <image>
+    #
+    # because "check" requires a filter expression.
+    #
+    # We use "ctr images list" and exact matching instead.
+    # =========================================================
+
+    - name: List containerd images
+      ansible.builtin.command:
+        cmd: >
+          ctr -n k8s.io images list
+      register: containerd_images
+      changed_when: false
+
+
+    # =========================================================
+    # 11. Verify Calico CNI image
+    # =========================================================
+
+    - name: Verify Calico CNI image
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ctr -n k8s.io images list |
+          awk '{print $1}' |
+          grep -Fx "{{ calico_cni_image }}"
+        executable: /bin/bash
+      register: verify_cni_image
+      changed_when: false
+
+
+    # =========================================================
+    # 12. Verify Calico node image
+    # =========================================================
+
+    - name: Verify Calico node image
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ctr -n k8s.io images list |
+          awk '{print $1}' |
+          grep -Fx "{{ calico_node_image }}"
+        executable: /bin/bash
+      register: verify_node_image
+      changed_when: false
+
+
+    # =========================================================
+    # 13. Verify Calico controller image
+    # =========================================================
+
+    - name: Verify Calico kube-controllers image
+      ansible.builtin.shell:
+        cmd: |
+          set -o pipefail
+          ctr -n k8s.io images list |
+          awk '{print $1}' |
+          grep -Fx "{{ calico_controller_image }}"
+        executable: /bin/bash
+      register: verify_controller_image
+      changed_when: false
+
+
+    # =========================================================
+    # 14. Display verified images
+    # =========================================================
+
+    - name: Display verified Calico images
+      ansible.builtin.debug:
+        msg:
+          - "Calico CNI image: {{ calico_cni_image }}"
+          - "Calico node image: {{ calico_node_image }}"
+          - "Calico controller image: {{ calico_controller_image }}"
+
+
+    # =========================================================
+    # 15. Remove existing Calico resources
+    #
+    # This is intentional because the previous manual installation
+    # created Calico resources.
+    #
+    # --ignore-not-found makes this safe when resources are absent.
+    # =========================================================
+
+    - name: Remove existing Calico DaemonSet
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          -n kube-system
+          delete daemonset calico-node
+          --ignore-not-found=true
+      register: delete_calico_daemonset
+      changed_when: "'deleted' in delete_calico_daemonset.stdout"
+
+
+    - name: Remove existing Calico controller Deployment
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          -n kube-system
+          delete deployment calico-kube-controllers
+          --ignore-not-found=true
+      register: delete_calico_deployment
+      changed_when: "'deleted' in delete_calico_deployment.stdout"
+
+
+    # =========================================================
+    # 16. Remove residual Calico pods
+    # =========================================================
+
+    - name: Find existing Calico pods
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          -n kube-system
+          get pods
+          -l k8s-app=calico-kube-controllers
+          -o name
+      register: existing_calico_controller_pods
+      changed_when: false
+      failed_when: false
+
+
+    - name: Force delete residual Calico controller pods
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          --namespace=kube-system
+          delete {{ item }}
+          --force
+          --grace-period=0
+          --ignore-not-found=true
+      loop: "{{ existing_calico_controller_pods.stdout_lines }}"
+      when:
+        - existing_calico_controller_pods.stdout_lines | length > 0
+
+
+    # =========================================================
+    # 17. Apply Calico manifest
+    # =========================================================
+
+    - name: Apply Calico manifest
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          apply
+          -f {{ calico_manifest_remote }}
+      register: calico_apply
+      changed_when: true
+
+
+    - name: Display Calico apply result
+      ansible.builtin.debug:
+        var: calico_apply.stdout_lines
+
+
+    # =========================================================
+    # 18. Wait for Calico node DaemonSet
+    # =========================================================
+
+    - name: Wait for Calico node DaemonSet
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          -n kube-system
+          rollout status
+          daemonset/calico-node
+          --timeout=180s
+      register: calico_node_rollout
+      changed_when: false
+
+
+    # =========================================================
+    # 19. Wait for Calico controller Deployment
+    # =========================================================
+
+    - name: Wait for Calico controller Deployment
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          -n kube-system
+          rollout status
+          deployment/calico-kube-controllers
+          --timeout=180s
+      register: calico_controller_rollout
+      changed_when: false
+
+
+    # =========================================================
+    # 20. Get Calico pods
+    # =========================================================
+
+    - name: Get Calico pods
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          get pods
+          -A
+          -o wide
+      register: calico_pods
+      changed_when: false
+
+
+    - name: Display Calico pods
+      ansible.builtin.debug:
+        var: calico_pods.stdout_lines
+
+
+    # =========================================================
+    # 21. Check Calico DaemonSet
+    # =========================================================
+
+    - name: Check Calico DaemonSet
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          get daemonset
+          -A
+      register: calico_daemonsets
+      changed_when: false
+
+
+    - name: Display Calico DaemonSet
+      ansible.builtin.debug:
+        var: calico_daemonsets.stdout_lines
+
+
+    # =========================================================
+    # 22. Check Calico Deployment
+    # =========================================================
+
+    - name: Check Calico Deployment
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          get deployment
+          -A
+      register: calico_deployments
+      changed_when: false
+
+
+    - name: Display Calico Deployment
+      ansible.builtin.debug:
+        var: calico_deployments.stdout_lines
+
+
+    # =========================================================
+    # 23. Check Kubernetes node
+    # =========================================================
+
+    - name: Check Kubernetes nodes after Calico installation
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          get nodes
+          -o wide
+      register: final_nodes
+      changed_when: false
+
+
+    - name: Display final Kubernetes nodes
+      ansible.builtin.debug:
+        var: final_nodes.stdout_lines
+
+
+    # =========================================================
+    # 24. Check NetworkUnavailable
+    # =========================================================
+
+    - name: Check NetworkUnavailable condition
+      ansible.builtin.shell:
+        cmd: |
+          kubectl \
+            --kubeconfig={{ kubeconfig }} \
+            get node mgmt-node \
+            -o jsonpath='{range .status.conditions[*]}{.type}={.status}{" "}{.reason}{"\n"}{end}'
+      register: node_conditions
+      changed_when: false
+
+
+    - name: Display node conditions
+      ansible.builtin.debug:
+        var: node_conditions.stdout_lines
+
+
+    # =========================================================
+    # 25. Check CoreDNS
+    # =========================================================
+
+    - name: Check CoreDNS
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          -n kube-system
+          get pods
+          -l k8s-app=kube-dns
+          -o wide
+      register: coredns_status
+      changed_when: false
+
+
+    - name: Display CoreDNS
+      ansible.builtin.debug:
+        var: coredns_status.stdout_lines
+
+
+    # =========================================================
+    # 26. Final cluster status
+    # =========================================================
+
+    - name: Get final cluster status
+      ansible.builtin.command:
+        cmd: >
+          kubectl
+          --kubeconfig={{ kubeconfig }}
+          get pods
+          -A
+          -o wide
+      register: final_cluster_status
+      changed_when: false
+
+
+    - name: Display final cluster status
+      ansible.builtin.debug:
+        var: final_cluster_status.stdout_lines
+
+
+    # =========================================================
+    # 27. Final success message
+    # =========================================================
+
+    - name: Calico installation completed
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "Calico CNI installation completed"
+          - "Calico version: {{ calico_version }}"
+          - "Pod CIDR: {{ calico_pod_cidr }}"
+          - "=============================================="

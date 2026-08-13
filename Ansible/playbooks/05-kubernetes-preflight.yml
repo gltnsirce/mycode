@@ -1,0 +1,288 @@
+---
+- name: Kubernetes preflight checks
+  hosts: k8s
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # ==========================================================
+    # 1. Operating System
+    # ==========================================================
+
+    - name: Display OS information
+      ansible.builtin.debug:
+        msg: >
+          {{ inventory_hostname }}:
+          {{ ansible_facts["distribution"] }}
+          {{ ansible_facts["distribution_version"] }}
+          {{ ansible_facts["architecture"] }}
+
+
+    # ==========================================================
+    # 2. Architecture
+    # ==========================================================
+
+    - name: Verify x86_64 architecture
+      ansible.builtin.assert:
+        that:
+          - ansible_facts["architecture"] == "x86_64"
+        fail_msg: >
+          {{ inventory_hostname }} is not x86_64.
+        success_msg: >
+          {{ inventory_hostname }} architecture is x86_64.
+
+
+    # ==========================================================
+    # 3. Swap
+    # ==========================================================
+
+    - name: Check active swap
+      ansible.builtin.command:
+        cmd: swapon --show
+      register: swap_status
+      changed_when: false
+
+    - name: Verify swap is disabled
+      ansible.builtin.assert:
+        that:
+          - swap_status.stdout == ""
+        fail_msg: >
+          Swap is enabled on {{ inventory_hostname }}.
+          Kubernetes requires swap to be disabled for this setup.
+        success_msg: >
+          Swap is disabled on {{ inventory_hostname }}.
+
+
+    # ==========================================================
+    # 4. Kernel Modules
+    # ==========================================================
+
+    - name: Check loaded kernel modules
+      ansible.builtin.command:
+        cmd: lsmod
+      register: lsmod_output
+      changed_when: false
+
+    - name: Verify overlay kernel module
+      ansible.builtin.assert:
+        that:
+          - "'overlay' in lsmod_output.stdout"
+        fail_msg: >
+          overlay kernel module is not loaded on {{ inventory_hostname }}.
+        success_msg: >
+          overlay kernel module is loaded.
+
+
+    - name: Verify br_netfilter kernel module
+      ansible.builtin.assert:
+        that:
+          - "'br_netfilter' in lsmod_output.stdout"
+        fail_msg: >
+          br_netfilter kernel module is not loaded on {{ inventory_hostname }}.
+        success_msg: >
+          br_netfilter kernel module is loaded.
+
+
+    # ==========================================================
+    # 5. Kubernetes Network Sysctl
+    # ==========================================================
+
+    - name: Read net.ipv4.ip_forward
+      ansible.builtin.command:
+        cmd: sysctl -n net.ipv4.ip_forward
+      register: ip_forward
+      changed_when: false
+
+    - name: Verify IP forwarding
+      ansible.builtin.assert:
+        that:
+          - ip_forward.stdout | trim == "1"
+        fail_msg: >
+          net.ipv4.ip_forward is not 1 on {{ inventory_hostname }}.
+        success_msg: >
+          net.ipv4.ip_forward = 1.
+
+
+    - name: Read bridge-nf-call-iptables
+      ansible.builtin.command:
+        cmd: sysctl -n net.bridge.bridge-nf-call-iptables
+      register: bridge_iptables
+      changed_when: false
+
+    - name: Verify bridge-nf-call-iptables
+      ansible.builtin.assert:
+        that:
+          - bridge_iptables.stdout | trim == "1"
+        fail_msg: >
+          net.bridge.bridge-nf-call-iptables is not 1
+          on {{ inventory_hostname }}.
+        success_msg: >
+          net.bridge.bridge-nf-call-iptables = 1.
+
+
+    - name: Read bridge-nf-call-ip6tables
+      ansible.builtin.command:
+        cmd: sysctl -n net.bridge.bridge-nf-call-ip6tables
+      register: bridge_ip6tables
+      changed_when: false
+
+    - name: Verify bridge-nf-call-ip6tables
+      ansible.builtin.assert:
+        that:
+          - bridge_ip6tables.stdout | trim == "1"
+        fail_msg: >
+          net.bridge.bridge-nf-call-ip6tables is not 1
+          on {{ inventory_hostname }}.
+        success_msg: >
+          net.bridge.bridge-nf-call-ip6tables = 1.
+
+
+    # ==========================================================
+    # 6. containerd
+    # ==========================================================
+
+    - name: Check containerd service
+      ansible.builtin.command:
+        cmd: systemctl is-active containerd
+      register: containerd_status
+      changed_when: false
+
+    - name: Verify containerd is active
+      ansible.builtin.assert:
+        that:
+          - containerd_status.stdout | trim == "active"
+        fail_msg: >
+          containerd is not active on {{ inventory_hostname }}.
+        success_msg: >
+          containerd is active.
+
+
+    # ==========================================================
+    # 7. containerd SystemdCgroup
+    # ==========================================================
+
+    - name: Check containerd SystemdCgroup
+      ansible.builtin.shell:
+        cmd: >
+          grep -E
+          '^[[:space:]]*SystemdCgroup[[:space:]]*='
+          /etc/containerd/config.toml
+      register: systemd_cgroup
+      changed_when: false
+
+    - name: Verify containerd SystemdCgroup
+      ansible.builtin.assert:
+        that:
+          - "'SystemdCgroup = true' in systemd_cgroup.stdout"
+        fail_msg: >
+          SystemdCgroup is not enabled on {{ inventory_hostname }}.
+        success_msg: >
+          SystemdCgroup = true.
+
+
+    # ==========================================================
+    # 8. Kubernetes binaries
+    # ==========================================================
+
+    - name: Check kubeadm version
+      ansible.builtin.command:
+        cmd: kubeadm version -o short
+      register: kubeadm_version
+      changed_when: false
+
+
+    - name: Check kubelet version
+      ansible.builtin.command:
+        cmd: kubelet --version
+      register: kubelet_version
+      changed_when: false
+
+
+    - name: Check kubectl version
+      ansible.builtin.command:
+        cmd: kubectl version --client
+      register: kubectl_version
+      changed_when: false
+
+
+    # ==========================================================
+    # 9. Verify Kubernetes version consistency
+    # ==========================================================
+
+    - name: Verify kubeadm version
+      ansible.builtin.assert:
+        that:
+          - kubeadm_version.stdout | trim == "v1.35.7"
+        fail_msg: >
+          kubeadm version on {{ inventory_hostname }} is
+          {{ kubeadm_version.stdout | trim }},
+          expected v1.35.7.
+        success_msg: >
+          kubeadm version is v1.35.7.
+
+
+    - name: Verify kubelet version
+      ansible.builtin.assert:
+        that:
+          - "'v1.35.7' in kubelet_version.stdout"
+        fail_msg: >
+          kubelet version on {{ inventory_hostname }} is
+          {{ kubelet_version.stdout | trim }},
+          expected v1.35.7.
+        success_msg: >
+          kubelet version is v1.35.7.
+
+
+    - name: Verify kubectl version
+      ansible.builtin.assert:
+        that:
+          - "'v1.35.7' in kubectl_version.stdout"
+        fail_msg: >
+          kubectl version on {{ inventory_hostname }} does not contain
+          v1.35.7.
+        success_msg: >
+          kubectl version is v1.35.7.
+
+
+    # ==========================================================
+    # 10. Display Kubernetes versions
+    # ==========================================================
+
+    - name: Display Kubernetes versions
+      ansible.builtin.debug:
+        msg:
+          - "Node: {{ inventory_hostname }}"
+          - "kubeadm: {{ kubeadm_version.stdout | trim }}"
+          - "kubelet: {{ kubelet_version.stdout | trim }}"
+          - "kubectl: {{ kubectl_version.stdout | trim }}"
+
+
+    # ==========================================================
+    # 11. kubelet service
+    # ==========================================================
+
+    - name: Check kubelet enabled state
+      ansible.builtin.command:
+        cmd: systemctl is-enabled kubelet
+      register: kubelet_enabled
+      changed_when: false
+
+    - name: Verify kubelet is enabled
+      ansible.builtin.assert:
+        that:
+          - kubelet_enabled.stdout | trim == "enabled"
+        fail_msg: >
+          kubelet is not enabled on {{ inventory_hostname }}.
+        success_msg: >
+          kubelet is enabled.
+
+
+    # ==========================================================
+    # 12. Final result
+    # ==========================================================
+
+    - name: Kubernetes preflight check completed
+      ansible.builtin.debug:
+        msg: >
+          Kubernetes preflight checks PASSED on {{ inventory_hostname }}

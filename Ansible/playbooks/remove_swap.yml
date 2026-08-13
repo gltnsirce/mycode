@@ -1,0 +1,10 @@
+---
+- name: Remove swap entry from /etc/fstab
+  hosts: k8s
+  become: true  # 修改 /etc/fstab 需要 root 权限
+  tasks:
+    - name: Ensure swap entry is removed from /etc/fstab
+      ansible.posix.mount:
+        path: none
+        fstype: swap
+        state: absent

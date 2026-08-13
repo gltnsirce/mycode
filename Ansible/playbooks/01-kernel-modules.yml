@@ -1,0 +1,36 @@
+---
+- name: Prepare Linux kernel modules for Kubernetes
+  hosts: k8s
+  become: true
+
+  tasks:
+
+    - name: Load overlay kernel module
+      ansible.builtin.modprobe:
+        name: overlay
+        state: present
+
+    - name: Load br_netfilter kernel module
+      ansible.builtin.modprobe:
+        name: br_netfilter
+        state: present
+
+    - name: Configure Kubernetes kernel modules to load at boot
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k8s.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Check loaded kernel modules
+      ansible.builtin.shell: |
+        lsmod | grep -E '^(overlay|br_netfilter)'
+      register: k8s_kernel_modules
+      changed_when: false
+
+    - name: Display loaded Kubernetes kernel modules
+      ansible.builtin.debug:
+        var: k8s_kernel_modules.stdout_lines

@@ -1,0 +1,14 @@
+---
+- name: Comment out swap entry in /etc/fstab
+  hosts: k8s
+  become: true  # 修改 /etc/fstab 需要 root 权限
+  tasks:
+    - name: Comment out /swap.img line in /etc/fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        # 匹配以 /swap.img 开头的未注释行（兼容前面的空格/Tab）
+        regexp: '^(\s*/swap\.img\s+none\s+swap.*)'
+        # 在行首加上 # 号注释
+        line: '# \1'
+        backrefs: true
+        backup: true

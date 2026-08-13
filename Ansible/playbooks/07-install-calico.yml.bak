@@ -1,0 +1,219 @@
+---
+- name: Install Calico CNI
+  hosts: k8s_control_plane
+  become: true
+
+  vars:
+    kubernetes_version: "v1.35.7"
+    pod_network_cidr: "10.244.0.0/16"
+
+    calico_version: "v3.32.1"
+
+    calico_manifest_file: "/root/calico-{{ calico_version }}.yaml"
+
+  tasks:
+
+    # ==========================================================
+    # 1. Verify Kubernetes
+    # ==========================================================
+
+    - name: Check Kubernetes cluster
+      become_user: ansible
+      ansible.builtin.command:
+        cmd: kubectl get nodes -o wide
+      register: kubernetes_nodes
+      changed_when: false
+
+    - name: Display Kubernetes nodes
+      ansible.builtin.debug:
+        var: kubernetes_nodes.stdout_lines
+
+
+    # ==========================================================
+    # 2. Verify kubeconfig
+    # ==========================================================
+
+    - name: Check ansible kubeconfig
+      become_user: ansible
+      ansible.builtin.stat:
+        path: /home/ansible/.kube/config
+      register: ansible_kubeconfig
+
+    - name: Fail if kubeconfig does not exist
+      ansible.builtin.fail:
+        msg: >
+          /home/ansible/.kube/config does not exist.
+          06-kubeadm-init.yml must be completed first.
+      when: not ansible_kubeconfig.stat.exists
+
+
+    # ==========================================================
+    # 3. Verify containerd
+    # ==========================================================
+
+    - name: Check containerd
+      ansible.builtin.systemd:
+        name: containerd
+        state: started
+        enabled: true
+
+
+    # ==========================================================
+    # 4. Verify CNI directories
+    # ==========================================================
+
+    - name: Ensure CNI configuration directory exists
+      ansible.builtin.file:
+        path: /etc/cni/net.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Ensure CNI binary directory exists
+      ansible.builtin.file:
+        path: /opt/cni/bin
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+
+    # ==========================================================
+    # 5. Check Calico manifest
+    #
+    # IMPORTANT:
+    # The manifest must already exist.
+    #
+    # We deliberately do NOT download from:
+    #   raw.githubusercontent.com
+    #   files.m.daocloud.io
+    # ==========================================================
+
+    - name: Check Calico manifest
+      ansible.builtin.stat:
+        path: "{{ calico_manifest_file }}"
+      register: calico_manifest
+
+    - name: Stop if Calico manifest is missing
+      ansible.builtin.fail:
+        msg: |
+          Calico manifest does not exist:
+
+          {{ calico_manifest_file }}
+
+          Please place the Calico v{{ calico_version }}
+          manifest on mgmt-node first.
+      when: not calico_manifest.stat.exists
+
+
+    # ==========================================================
+    # 6. Configure Pod CIDR
+    # ==========================================================
+
+    - name: Configure Calico IPv4 pool
+      ansible.builtin.replace:
+        path: "{{ calico_manifest_file }}"
+        regexp: '(^[[:space:]]*)#[[:space:]]*- name: CALICO_IPV4POOL_CIDR'
+        replace: '\1- name: CALICO_IPV4POOL_CIDR'
+
+    - name: Configure Calico IPv4 pool value
+      ansible.builtin.replace:
+        path: "{{ calico_manifest_file }}"
+        regexp: '(^[[:space:]]*)#[[:space:]]*value:[[:space:]]*"192\.168\.0\.0/16"'
+        replace: '\1  value: "{{ pod_network_cidr }}"'
+
+
+    # ==========================================================
+    # 7. Display Calico images
+    # ==========================================================
+
+    - name: List Calico image references
+      ansible.builtin.shell:
+        cmd: |
+          grep -E 'image:[[:space:]]*(quay.io/)?calico/' \
+          "{{ calico_manifest_file }}" | sort -u
+      register: calico_image_check
+      changed_when: false
+
+    - name: Display Calico image references
+      ansible.builtin.debug:
+        var: calico_image_check.stdout_lines
+
+
+    # ==========================================================
+    # 8. Verify local Calico images
+    #
+    # IMPORTANT:
+    # No image download is performed here.
+    # ==========================================================
+
+    - name: Check local Calico images
+      ansible.builtin.shell:
+        cmd: |
+          ctr -n k8s.io images list | grep -E 'calico/(cni|node|kube-controllers|pod2daemon-flexvol)'
+      register: local_calico_images
+      failed_when: false
+      changed_when: false
+
+    - name: Display local Calico images
+      ansible.builtin.debug:
+        var: local_calico_images.stdout_lines
+
+
+    # ==========================================================
+    # 9. Install Calico
+    # ==========================================================
+
+    - name: Check whether Calico node already exists
+      become_user: ansible
+      ansible.builtin.command:
+        cmd: kubectl get daemonset calico-node -n kube-system
+      register: calico_existing
+      failed_when: false
+      changed_when: false
+
+    - name: Install Calico
+      become_user: ansible
+      ansible.builtin.command:
+        cmd: kubectl create -f {{ calico_manifest_file }}
+      register: calico_install
+      when: calico_existing.rc != 0
+      changed_when: true
+
+    - name: Display Calico installation result
+      ansible.builtin.debug:
+        var: calico_install.stdout_lines
+      when: calico_existing.rc != 0
+
+
+    # ==========================================================
+    # 10. Show Calico status
+    # ==========================================================
+
+    - name: Get Calico pods
+      become_user: ansible
+      ansible.builtin.command:
+        cmd: kubectl get pods -n kube-system -o wide
+      register: calico_pods
+      changed_when: false
+
+    - name: Display Calico pods
+      ansible.builtin.debug:
+        var: calico_pods.stdout_lines
+
+
+    # ==========================================================
+    # 11. Show node status
+    # ==========================================================
+
+    - name: Get node status
+      become_user: ansible
+      ansible.builtin.command:
+        cmd: kubectl get nodes -o wide
+      register: final_nodes
+      changed_when: false
+
+    - name: Display node status
+      ansible.builtin.debug:
+        var: final_nodes.stdout_lines

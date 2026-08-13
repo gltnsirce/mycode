@@ -1,0 +1,30 @@
+---
+- name: Configure Kubernetes kernel networking parameters
+  hosts: k8s
+  become: true
+
+  tasks:
+
+    - name: Configure net.bridge.bridge-nf-call-iptables
+      ansible.posix.sysctl:
+        name: net.bridge.bridge-nf-call-iptables
+        value: '1'
+        state: present
+        sysctl_file: /etc/sysctl.d/99-kubernetes-cri.conf
+        reload: true
+
+    - name: Configure net.bridge.bridge-nf-call-ip6tables
+      ansible.posix.sysctl:
+        name: net.bridge.bridge-nf-call-ip6tables
+        value: '1'
+        state: present
+        sysctl_file: /etc/sysctl.d/99-kubernetes-cri.conf
+        reload: true
+
+    - name: Configure net.ipv4.ip_forward
+      ansible.posix.sysctl:
+        name: net.ipv4.ip_forward
+        value: '1'
+        state: present
+        sysctl_file: /etc/sysctl.d/99-kubernetes-cri.conf
+        reload: true
