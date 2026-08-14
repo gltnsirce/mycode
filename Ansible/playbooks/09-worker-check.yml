@@ -1,0 +1,910 @@
+---
+# Kubernetes Worker Node Health Check
+#
+# Cluster:
+#   mgmt-node      192.168.2.32
+#   worker-node1   192.168.2.33
+#   worker-node2   192.168.2.34
+#
+# Kubernetes:
+#   v1.35.7
+#   Container Runtime: containerd
+#   CNI: Calico
+#   Pod CIDR: 10.244.0.0/16
+#   Service CIDR: 10.96.0.0/12
+#   API Server: 192.168.2.32:6443
+#
+# This playbook is READ-ONLY.
+# It does not install, modify, restart, or join anything.
+
+- name: Kubernetes Worker Node Health Check
+  hosts:
+    - worker-node1
+    - worker-node2
+  become: true
+  gather_facts: true
+
+  vars:
+    kubernetes_api_server: "192.168.2.32"
+    kubernetes_api_port: 6443
+    kubernetes_service_ip: "10.96.0.1"
+    kubernetes_service_port: 443
+    expected_worker_ips:
+      worker-node1: "192.168.2.33"
+      worker-node2: "192.168.2.34"
+
+  tasks:
+
+    # ============================================================
+    # 1. Basic host information
+    # ============================================================
+
+    - name: Display worker hostname and address
+      ansible.builtin.debug:
+        msg:
+          - "Worker hostname: {{ inventory_hostname }}"
+          - "Expected IP: {{ expected_worker_ips[inventory_hostname] }}"
+          - "Detected IPv4 addresses: {{ ansible_all_ipv4_addresses | join(', ') }}"
+          - "Architecture: {{ ansible_facts['architecture'] }}"
+          - "OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+          - "Kernel: {{ ansible_facts['kernel'] }}"
+
+    - name: Verify worker architecture
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['architecture'] == "x86_64"
+        fail_msg: >-
+          Worker {{ inventory_hostname }} architecture is
+          {{ ansible_facts['architecture'] }}, expected x86_64.
+        success_msg: "Worker architecture is x86_64."
+
+    - name: Verify worker IP
+      ansible.builtin.assert:
+        that:
+          - expected_worker_ips[inventory_hostname] in ansible_all_ipv4_addresses
+        fail_msg: >-
+          Expected IP {{ expected_worker_ips[inventory_hostname] }}
+          was not found on {{ inventory_hostname }}.
+        success_msg: >-
+          Worker {{ inventory_hostname }} has the expected IP
+          {{ expected_worker_ips[inventory_hostname] }}.
+
+    # ============================================================
+    # 2. Required Kubernetes software
+    # ============================================================
+
+    - name: Check containerd package
+      ansible.builtin.command:
+        cmd: dpkg-query -W -f='${Status}' containerd
+      register: containerd_package
+      changed_when: false
+      failed_when: false
+
+    - name: Verify containerd package
+      ansible.builtin.assert:
+        that:
+          - containerd_package.rc == 0
+          - "'install ok installed' in containerd_package.stdout"
+        fail_msg: "containerd package is not installed correctly."
+        success_msg: "containerd package is installed."
+
+    - name: Check kubeadm package
+      ansible.builtin.command:
+        cmd: dpkg-query -W -f='${Status}' kubeadm
+      register: kubeadm_package
+      changed_when: false
+      failed_when: false
+
+    - name: Verify kubeadm package
+      ansible.builtin.assert:
+        that:
+          - kubeadm_package.rc == 0
+          - "'install ok installed' in kubeadm_package.stdout"
+        fail_msg: "kubeadm package is not installed correctly."
+        success_msg: "kubeadm package is installed."
+
+    - name: Check kubelet package
+      ansible.builtin.command:
+        cmd: dpkg-query -W -f='${Status}' kubelet
+      register: kubelet_package
+      changed_when: false
+      failed_when: false
+
+    - name: Verify kubelet package
+      ansible.builtin.assert:
+        that:
+          - kubelet_package.rc == 0
+          - "'install ok installed' in kubelet_package.stdout"
+        fail_msg: "kubelet package is not installed correctly."
+        success_msg: "kubelet package is installed."
+
+    # ============================================================
+    # 3. Container runtime
+    # ============================================================
+
+    - name: Check containerd service
+      ansible.builtin.command:
+        cmd: systemctl is-active containerd
+      register: containerd_service
+      changed_when: false
+      failed_when: false
+
+    - name: Verify containerd is active
+      ansible.builtin.assert:
+        that:
+          - containerd_service.rc == 0
+          - containerd_service.stdout | trim == "active"
+        fail_msg: >-
+          containerd is not active.
+          Current state: {{ containerd_service.stdout | trim }}.
+        success_msg: "containerd is active."
+
+    - name: Check containerd configuration
+      ansible.builtin.stat:
+        path: /etc/containerd/config.toml
+      register: containerd_config
+
+    - name: Verify containerd configuration exists
+      ansible.builtin.assert:
+        that:
+          - containerd_config.stat.exists
+        fail_msg: "/etc/containerd/config.toml does not exist."
+        success_msg: "containerd configuration exists."
+
+    - name: Check containerd cgroup configuration
+      ansible.builtin.shell:
+        cmd: |
+          containerd config dump 2>/dev/null |
+          grep -E 'SystemdCgroup[[:space:]]*=[[:space:]]*true' |
+          head -1
+      register: containerd_cgroup
+      changed_when: false
+      failed_when: false
+
+    - name: Display containerd cgroup configuration
+      ansible.builtin.debug:
+        msg: >-
+          containerd SystemdCgroup check:
+          {{ containerd_cgroup.stdout | default('not detected') | trim }}
+
+    # ============================================================
+    # 4. Kubelet
+    # ============================================================
+
+    - name: Check kubelet service
+      ansible.builtin.command:
+        cmd: systemctl is-active kubelet
+      register: kubelet_service
+      changed_when: false
+      failed_when: false
+
+    - name: Verify kubelet is active
+      ansible.builtin.assert:
+        that:
+          - kubelet_service.rc == 0
+          - kubelet_service.stdout | trim == "active"
+        fail_msg: >-
+          kubelet is not active.
+          Current state: {{ kubelet_service.stdout | trim }}.
+        success_msg: "kubelet is active."
+
+    - name: Check kubelet enabled state
+      ansible.builtin.command:
+        cmd: systemctl is-enabled kubelet
+      register: kubelet_enabled
+      changed_when: false
+      failed_when: false
+
+    - name: Verify kubelet is enabled
+      ansible.builtin.assert:
+        that:
+          - kubelet_enabled.stdout | trim in ["enabled", "static"]
+        fail_msg: >-
+          kubelet enabled state is
+          {{ kubelet_enabled.stdout | trim }}.
+        success_msg: "kubelet is enabled or managed as a static service."
+
+    - name: Check kubelet configuration
+      ansible.builtin.stat:
+        path: /var/lib/kubelet/config.yaml
+      register: kubelet_config
+
+    - name: Verify kubelet configuration exists
+      ansible.builtin.assert:
+        that:
+          - kubelet_config.stat.exists
+        fail_msg: "/var/lib/kubelet/config.yaml does not exist."
+        success_msg: "Kubelet configuration exists."
+
+    - name: Check kubelet kubeconfig
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_kubeconfig
+
+    - name: Verify kubelet kubeconfig exists
+      ansible.builtin.assert:
+        that:
+          - kubelet_kubeconfig.stat.exists
+        fail_msg: "/etc/kubernetes/kubelet.conf does not exist."
+        success_msg: "Kubelet kubeconfig exists."
+
+    # ============================================================
+    # 5. Kubernetes join state
+    # ============================================================
+
+    - name: Check Kubernetes node certificate directory
+      ansible.builtin.stat:
+        path: /var/lib/kubelet/pki
+      register: kubelet_pki
+
+    - name: Verify kubelet PKI directory
+      ansible.builtin.assert:
+        that:
+          - kubelet_pki.stat.exists
+          - kubelet_pki.stat.isdir
+        fail_msg: "/var/lib/kubelet/pki is missing."
+        success_msg: "Kubelet PKI directory exists."
+
+    - name: Check kubeadm kubelet configuration
+      ansible.builtin.command:
+        cmd: kubeadm config view
+      register: kubeadm_config_view
+      changed_when: false
+      failed_when: false
+
+    - name: Display kubeadm configuration status
+      ansible.builtin.debug:
+        msg: >-
+          kubeadm configuration check:
+          {{
+            'available'
+            if kubeadm_config_view.rc == 0
+            else 'not available through kubeadm config view'
+          }}
+
+    # ============================================================
+    # 6. Swap
+    # ============================================================
+
+    - name: Check active swap
+      ansible.builtin.command:
+        cmd: swapon --show --noheadings
+      register: active_swap
+      changed_when: false
+
+    - name: Verify swap is disabled
+      ansible.builtin.assert:
+        that:
+          - active_swap.stdout | trim == ""
+        fail_msg: >-
+          Swap is enabled on {{ inventory_hostname }}:
+          {{ active_swap.stdout | trim }}
+        success_msg: "Swap is disabled."
+
+    # ============================================================
+    # 7. Kubernetes networking kernel parameters
+    # ============================================================
+
+    - name: Check net.ipv4.ip_forward
+      ansible.builtin.command:
+        cmd: cat /proc/sys/net/ipv4/ip_forward
+      register: ip_forward
+      changed_when: false
+
+    - name: Display IPv4 forwarding status
+      ansible.builtin.debug:
+        msg: "net.ipv4.ip_forward={{ ip_forward.stdout | trim }}"
+
+    - name: Verify IPv4 forwarding
+      ansible.builtin.assert:
+        that:
+          - ip_forward.rc == 0
+          - ip_forward.stdout | trim == "1"
+        fail_msg: >-
+          net.ipv4.ip_forward is
+          '{{ ip_forward.stdout | trim }}',
+          expected 1.
+        success_msg: "IPv4 forwarding is enabled (1)."
+
+    - name: Check bridge-nf-call-iptables
+      ansible.builtin.command:
+        cmd: cat /proc/sys/net/bridge/bridge-nf-call-iptables
+      register: bridge_nf_iptables
+      changed_when: false
+      failed_when: false
+
+    - name: Display bridge-nf-call-iptables status
+      ansible.builtin.debug:
+        msg: >-
+          net.bridge.bridge-nf-call-iptables={{
+            bridge_nf_iptables.stdout | default('not available') | trim
+          }}
+
+    - name: Check bridge-nf-call-ip6tables
+      ansible.builtin.command:
+        cmd: cat /proc/sys/net/bridge/bridge-nf-call-ip6tables
+      register: bridge_nf_ip6tables
+      changed_when: false
+      failed_when: false
+
+    - name: Display bridge-nf-call-ip6tables status
+      ansible.builtin.debug:
+        msg: >-
+          net.bridge.bridge-nf-call-ip6tables={{
+            bridge_nf_ip6tables.stdout | default('not available') | trim
+          }}
+
+    - name: Check br_netfilter kernel module
+      ansible.builtin.command:
+        cmd: lsmod
+      register: loaded_modules
+      changed_when: false
+
+    - name: Verify br_netfilter kernel module
+      ansible.builtin.assert:
+        that:
+          - "'br_netfilter' in loaded_modules.stdout"
+        fail_msg: "br_netfilter kernel module is not loaded."
+        success_msg: "br_netfilter kernel module is loaded."
+
+    # ============================================================
+    # 8. Kubernetes API Server connectivity
+    # ============================================================
+
+    - name: Test Kubernetes API Server TCP port
+      ansible.builtin.wait_for:
+        host: "{{ kubernetes_api_server }}"
+        port: "{{ kubernetes_api_port }}"
+        timeout: 5
+        state: started
+      register: api_tcp_test
+
+    - name: Verify Kubernetes API Server TCP connectivity
+      ansible.builtin.assert:
+        that:
+          - api_tcp_test is succeeded
+        fail_msg: >-
+          Cannot connect from {{ inventory_hostname }} to
+          {{ kubernetes_api_server }}:{{ kubernetes_api_port }}.
+        success_msg: >-
+          Kubernetes API Server TCP port
+          {{ kubernetes_api_server }}:{{ kubernetes_api_port }}
+          is reachable.
+
+    # ============================================================
+    # 9. Kubernetes Service IP connectivity
+    # ============================================================
+
+    - name: Test Kubernetes Service IP TCP port
+      ansible.builtin.wait_for:
+        host: "{{ kubernetes_service_ip }}"
+        port: "{{ kubernetes_service_port }}"
+        timeout: 5
+        state: started
+      register: service_tcp_test
+
+    - name: Verify Kubernetes Service IP connectivity
+      ansible.builtin.assert:
+        that:
+          - service_tcp_test is succeeded
+        fail_msg: >-
+          Cannot connect from {{ inventory_hostname }} to
+          Kubernetes Service IP
+          {{ kubernetes_service_ip }}:{{ kubernetes_service_port }}.
+        success_msg: >-
+          Kubernetes Service IP
+          {{ kubernetes_service_ip }}:{{ kubernetes_service_port }}
+          is reachable.
+
+    # ============================================================
+    # 10. Routing
+    # ============================================================
+
+    - name: Check routing table
+      ansible.builtin.command:
+        cmd: ip route
+      register: routing_table
+      changed_when: false
+
+    - name: Display routing table
+      ansible.builtin.debug:
+        var: routing_table.stdout_lines
+
+    - name: Check default route
+      ansible.builtin.command:
+        cmd: ip route show default
+      register: default_route
+      changed_when: false
+      failed_when: false
+
+    - name: Verify default route exists
+      ansible.builtin.assert:
+        that:
+          - default_route.stdout | trim != ""
+        fail_msg: "No default IPv4 route was found."
+        success_msg: "Default IPv4 route exists."
+
+    # ============================================================
+    # 11. Kubernetes-related network interfaces
+    # ============================================================
+
+    - name: Check network interfaces
+      ansible.builtin.command:
+        cmd: ip -br addr
+      register: network_interfaces
+      changed_when: false
+
+    - name: Display network interfaces
+      ansible.builtin.debug:
+        var: network_interfaces.stdout_lines
+
+    - name: Check Calico interfaces
+      ansible.builtin.shell:
+        cmd: |
+          ip -br link |
+          grep -E 'cali|tunl|vxlan|wireguard' || true
+      register: calico_interfaces
+      changed_when: false
+
+    - name: Display Calico interfaces
+      ansible.builtin.debug:
+        msg: >-
+          Calico-related interfaces:
+          {{
+            calico_interfaces.stdout_lines
+            if calico_interfaces.stdout_lines | length > 0
+            else ['No Calico interface detected']
+          }}
+
+    # ============================================================
+    # 12. DNS configuration
+    # ============================================================
+
+    - name: Check resolv.conf
+      ansible.builtin.command:
+        cmd: cat /etc/resolv.conf
+      register: resolv_conf
+      changed_when: false
+
+    - name: Display DNS configuration
+      ansible.builtin.debug:
+        var: resolv_conf.stdout_lines
+
+    - name: Test external DNS resolution
+      ansible.builtin.command:
+        cmd: getent hosts kubernetes.io
+      register: external_dns_test
+      changed_when: false
+      failed_when: false
+
+    - name: Display external DNS resolution result
+      ansible.builtin.debug:
+        msg: >-
+          External DNS resolution:
+          {{
+            external_dns_test.stdout | trim
+            if external_dns_test.rc == 0
+            else 'FAILED - external DNS may be unavailable'
+          }}
+
+    # ============================================================
+    # 13. Connectivity to management node
+    # ============================================================
+
+    - name: Test management node ICMP connectivity
+      ansible.builtin.command:
+        cmd: ping -c 2 -W 2 192.168.2.32
+      register: mgmt_ping
+      changed_when: false
+      failed_when: false
+
+    - name: Verify management node connectivity
+      ansible.builtin.assert:
+        that:
+          - mgmt_ping.rc == 0
+        fail_msg: "Cannot ping management node 192.168.2.32."
+        success_msg: "Management node 192.168.2.32 is reachable."
+
+    # ============================================================
+    # 14. Containerd Kubernetes namespace
+    # ============================================================
+
+    - name: Check containerd Kubernetes namespace
+      ansible.builtin.command:
+        cmd: ctr -n k8s.io containers list
+      register: containerd_k8s_containers
+      changed_when: false
+      failed_when: false
+
+    - name: Display containerd Kubernetes container count
+      ansible.builtin.shell:
+        cmd: |
+          ctr -n k8s.io containers list 2>/dev/null |
+          tail -n +2 |
+          wc -l
+      register: containerd_container_count
+      changed_when: false
+      failed_when: false
+
+    - name: Display containerd Kubernetes namespace status
+      ansible.builtin.debug:
+        msg:
+          - "containerd k8s.io namespace rc={{ containerd_k8s_containers.rc }}"
+          - "Container count={{ containerd_container_count.stdout | trim }}"
+
+    # ============================================================
+    # 15. Kubelet recent errors
+    # ============================================================
+
+    - name: Check recent kubelet errors
+      ansible.builtin.command:
+        cmd: journalctl -u kubelet --since "15 minutes ago" -p err --no-pager
+      register: kubelet_errors
+      changed_when: false
+      failed_when: false
+
+    - name: Display recent kubelet errors
+      ansible.builtin.debug:
+        msg:
+          - >-
+            {{
+              kubelet_errors.stdout_lines
+              if kubelet_errors.stdout_lines | length > 0
+              else ['No kubelet errors in the last 15 minutes.']
+            }}
+
+    # ============================================================
+    # 16. Kubelet node identity
+    # ============================================================
+
+    - name: Check kubelet hostname override
+      ansible.builtin.shell:
+        cmd: |
+          grep -R "hostname-override" \
+            /var/lib/kubelet \
+            /etc/default/kubelet \
+            /etc/systemd/system/kubelet.service.d \
+            2>/dev/null || true
+      register: kubelet_hostname_override
+      changed_when: false
+
+    - name: Display kubelet hostname configuration
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            kubelet_hostname_override.stdout_lines
+            if kubelet_hostname_override.stdout_lines | length > 0
+            else ['No hostname override configured.']
+          }}
+
+    # ============================================================
+    # 17. Worker-side Kubernetes API health test
+    # ============================================================
+
+    - name: Test Kubernetes API HTTPS endpoint
+      ansible.builtin.command:
+        cmd: >-
+          curl -k -sS
+          --connect-timeout 5
+          https://{{ kubernetes_api_server }}:{{ kubernetes_api_port }}/readyz
+      register: api_readyz
+      changed_when: false
+      failed_when: false
+
+    - name: Verify Kubernetes API readyz
+      ansible.builtin.assert:
+        that:
+          - api_readyz.rc == 0
+          - "'ok' in api_readyz.stdout"
+        fail_msg: >-
+          Kubernetes API /readyz failed from {{ inventory_hostname }}.
+          Output: {{ api_readyz.stdout | default('') }}
+          Error: {{ api_readyz.stderr | default('') }}
+        success_msg: "Kubernetes API /readyz is reachable and healthy."
+
+    # ============================================================
+    # 18. Summary
+    # ============================================================
+
+    - name: Worker node check summary
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "Worker Node Health Check Completed"
+          - "============================================================"
+          - "Worker: {{ inventory_hostname }}"
+          - "IP: {{ expected_worker_ips[inventory_hostname] }}"
+          - "Architecture: {{ ansible_facts['architecture'] }}"
+          - "containerd: {{ containerd_service.stdout | trim }}"
+          - "kubelet: {{ kubelet_service.stdout | trim }}"
+          - "Swap: disabled"
+          - "IPv4 forwarding: {{ ip_forward.stdout | trim }}"
+          - "API Server: {{ kubernetes_api_server }}:{{ kubernetes_api_port }}"
+          - "API /readyz: {{ api_readyz.stdout | trim }}"
+          - "Kubernetes Service: {{ kubernetes_service_ip }}:{{ kubernetes_service_port }}"
+          - "============================================================"
+
+
+# =================================================================
+# Kubernetes cluster-side verification
+# =================================================================
+
+- name: Kubernetes Cluster Verification
+  hosts: mgmt-node
+  become: false
+  gather_facts: false
+
+  vars:
+    worker_nodes:
+      - worker-node1
+      - worker-node2
+
+  tasks:
+
+    # ============================================================
+    # 19. Verify kubectl
+    # ============================================================
+
+    - name: Verify kubectl is available
+      ansible.builtin.command:
+        cmd: kubectl version --client
+      register: kubectl_version
+      changed_when: false
+
+    - name: Display kubectl version
+      ansible.builtin.debug:
+        var: kubectl_version.stdout_lines
+
+    # ============================================================
+    # 20. Verify Kubernetes nodes
+    # ============================================================
+
+    - name: Get Kubernetes nodes
+      ansible.builtin.command:
+        cmd: kubectl get nodes -o wide
+      register: kubernetes_nodes
+      changed_when: false
+
+    - name: Display Kubernetes nodes
+      ansible.builtin.debug:
+        var: kubernetes_nodes.stdout_lines
+
+    - name: Check worker-node1 status
+      ansible.builtin.command:
+        cmd: kubectl get node worker-node1 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: worker1_ready
+      changed_when: false
+      failed_when: false
+
+    - name: Check worker-node2 status
+      ansible.builtin.command:
+        cmd: kubectl get node worker-node2 -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}'
+      register: worker2_ready
+      changed_when: false
+      failed_when: false
+
+    - name: Verify worker-node1 is Ready
+      ansible.builtin.assert:
+        that:
+          - worker1_ready.stdout | trim == "True"
+        fail_msg: >-
+          worker-node1 is not Ready.
+          Current Ready status:
+          {{ worker1_ready.stdout | trim }}
+        success_msg: "worker-node1 is Ready."
+
+    - name: Verify worker-node2 is Ready
+      ansible.builtin.assert:
+        that:
+          - worker2_ready.stdout | trim == "True"
+        fail_msg: >-
+          worker-node2 is not Ready.
+          Current Ready status:
+          {{ worker2_ready.stdout | trim }}
+        success_msg: "worker-node2 is Ready."
+
+    # ============================================================
+    # 21. Verify worker node IP addresses
+    # ============================================================
+
+    - name: Get worker-node1 InternalIP
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get node worker-node1
+          -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'
+      register: worker1_ip
+      changed_when: false
+
+    - name: Get worker-node2 InternalIP
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get node worker-node2
+          -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'
+      register: worker2_ip
+      changed_when: false
+
+    - name: Verify worker node IP addresses
+      ansible.builtin.assert:
+        that:
+          - worker1_ip.stdout | trim == "192.168.2.33"
+          - worker2_ip.stdout | trim == "192.168.2.34"
+        fail_msg: >-
+          Worker node IP verification failed.
+          worker-node1={{ worker1_ip.stdout | trim }}
+          worker-node2={{ worker2_ip.stdout | trim }}
+        success_msg: "Worker node InternalIP addresses are correct."
+
+    # ============================================================
+    # 22. Verify Kubernetes node roles and conditions
+    # ============================================================
+
+    - name: Get worker node conditions
+      ansible.builtin.command:
+        cmd: kubectl describe node {{ item }}
+      loop: "{{ worker_nodes }}"
+      register: worker_node_descriptions
+      changed_when: false
+
+    - name: Check worker node scheduling state
+      ansible.builtin.command:
+        cmd: kubectl get node {{ item }} -o jsonpath='{.spec.unschedulable}'
+      loop: "{{ worker_nodes }}"
+      register: worker_unschedulable
+      changed_when: false
+
+    - name: Display worker scheduling state
+      ansible.builtin.debug:
+        msg:
+          - >-
+            {{ item.item }} unschedulable={{
+              item.stdout | default('false') | trim
+            }}
+      loop: "{{ worker_unschedulable.results }}"
+
+    # ============================================================
+    # 23. Verify Calico
+    # ============================================================
+
+    - name: Get Calico pods
+      ansible.builtin.command:
+        cmd: kubectl get pods -n kube-system -o wide
+      register: kube_system_pods
+      changed_when: false
+
+    - name: Display kube-system pods
+      ansible.builtin.debug:
+        var: kube_system_pods.stdout_lines
+
+    - name: Verify Calico node pods
+      ansible.builtin.shell:
+        cmd: |
+          kubectl get pods -n kube-system \
+            -l k8s-app=calico-node \
+            -o wide
+      register: calico_nodes
+      changed_when: false
+      failed_when: false
+
+    - name: Display Calico node status
+      ansible.builtin.debug:
+        var: calico_nodes.stdout_lines
+
+    # ============================================================
+    # 24. Verify kube-proxy
+    # ============================================================
+
+    - name: Verify kube-proxy pods
+      ansible.builtin.command:
+        cmd: kubectl get pods -n kube-system -l k8s-app=kube-proxy -o wide
+      register: kube_proxy
+      changed_when: false
+
+    - name: Display kube-proxy status
+      ansible.builtin.debug:
+        var: kube_proxy.stdout_lines
+
+    # ============================================================
+    # 25. Verify CoreDNS
+    # ============================================================
+
+    - name: Verify CoreDNS pods
+      ansible.builtin.command:
+        cmd: kubectl get pods -n kube-system -l k8s-app=kube-dns -o wide
+      register: coredns
+      changed_when: false
+
+    - name: Display CoreDNS status
+      ansible.builtin.debug:
+        var: coredns.stdout_lines
+
+    # ============================================================
+    # 26. Verify Kubernetes service
+    # ============================================================
+
+    - name: Verify Kubernetes API Service
+      ansible.builtin.command:
+        cmd: kubectl get svc kubernetes -o wide
+      register: kubernetes_service
+      changed_when: false
+
+    - name: Display Kubernetes API Service
+      ansible.builtin.debug:
+        var: kubernetes_service.stdout_lines
+
+    # ============================================================
+    # 27. Verify EndpointSlice
+    # ============================================================
+
+    - name: Verify Kubernetes API EndpointSlice
+      ansible.builtin.command:
+        cmd: >-
+          kubectl get endpointslice
+          -l kubernetes.io/service-name=kubernetes
+          -o wide
+      register: kubernetes_endpoints
+      changed_when: false
+
+    - name: Display Kubernetes API endpoints
+      ansible.builtin.debug:
+        var: kubernetes_endpoints.stdout_lines
+
+    # ============================================================
+    # 28. Verify node PodCIDR
+    # ============================================================
+
+    - name: Get worker PodCIDR
+      ansible.builtin.command:
+        cmd: kubectl get node {{ item }} -o jsonpath='{.spec.podCIDR}'
+      loop: "{{ worker_nodes }}"
+      register: worker_podcidrs
+      changed_when: false
+
+    - name: Display worker PodCIDR
+      ansible.builtin.debug:
+        msg:
+          - "{{ item.item }} PodCIDR={{ item.stdout | trim }}"
+      loop: "{{ worker_podcidrs.results }}"
+
+    # ============================================================
+    # 29. Verify all nodes are Ready
+    # ============================================================
+
+    - name: Verify all Kubernetes nodes are Ready
+      ansible.builtin.shell:
+        cmd: |
+          kubectl get nodes --no-headers |
+          awk '{print $2}' |
+          grep -v '^Ready$' || true
+      register: non_ready_nodes
+      changed_when: false
+
+    - name: Assert all Kubernetes nodes are Ready
+      ansible.builtin.assert:
+        that:
+          - non_ready_nodes.stdout | trim == ""
+        fail_msg: >-
+          One or more Kubernetes nodes are not Ready:
+          {{ non_ready_nodes.stdout_lines }}
+        success_msg: "All Kubernetes nodes are Ready."
+
+    # ============================================================
+    # 30. Final cluster summary
+    # ============================================================
+
+    - name: Final Kubernetes cluster health summary
+      ansible.builtin.debug:
+        msg:
+          - "============================================================"
+          - "Kubernetes Cluster Verification Completed"
+          - "============================================================"
+          - "Kubernetes API Server: 192.168.2.32:6443"
+          - "worker-node1: 192.168.2.33 - Ready={{ worker1_ready.stdout | trim }}"
+          - "worker-node2: 192.168.2.34 - Ready={{ worker2_ready.stdout | trim }}"
+          - "Pod CIDR: 10.244.0.0/16"
+          - "Service CIDR: 10.96.0.0/12"
+          - "CNI: Calico"
+          - "Runtime: containerd"
+          - "============================================================"
+          - "Worker node infrastructure checks completed."
+          - "Cluster-side Kubernetes checks completed."
+          - "============================================================"
