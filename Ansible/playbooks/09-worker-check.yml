@@ -109,7 +109,7 @@
       register: containerd_service
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify containerd is active
       ansible.builtin.assert:
@@ -142,7 +142,7 @@
       register: containerd_cgroup
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display containerd cgroup configuration
       ansible.builtin.debug:
@@ -160,7 +160,7 @@
       register: kubelet_service
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify kubelet is active
       ansible.builtin.assert:
@@ -178,7 +178,7 @@
       register: kubelet_enabled
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify kubelet is enabled
       ansible.builtin.assert:
@@ -236,7 +236,7 @@
       register: kubeadm_config_view
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display kubeadm configuration status
       ansible.builtin.debug:
@@ -257,7 +257,7 @@
         cmd: swapon --show --noheadings
       register: active_swap
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify swap is disabled
       ansible.builtin.assert:
@@ -277,7 +277,7 @@
         cmd: cat /proc/sys/net/ipv4/ip_forward
       register: ip_forward
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display IPv4 forwarding status
       ansible.builtin.debug:
@@ -300,7 +300,7 @@
       register: bridge_nf_iptables
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display bridge-nf-call-iptables status
       ansible.builtin.debug:
@@ -315,7 +315,7 @@
       register: bridge_nf_ip6tables
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display bridge-nf-call-ip6tables status
       ansible.builtin.debug:
@@ -329,7 +329,7 @@
         cmd: lsmod
       register: loaded_modules
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify br_netfilter kernel module
       ansible.builtin.assert:
@@ -396,7 +396,7 @@
         cmd: ip route
       register: routing_table
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display routing table
       ansible.builtin.debug:
@@ -408,7 +408,7 @@
       register: default_route
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify default route exists
       ansible.builtin.assert:
@@ -426,7 +426,7 @@
         cmd: ip -br addr
       register: network_interfaces
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display network interfaces
       ansible.builtin.debug:
@@ -439,7 +439,7 @@
           grep -E 'cali|tunl|vxlan|wireguard' || true
       register: calico_interfaces
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display Calico interfaces
       ansible.builtin.debug:
@@ -460,7 +460,7 @@
         cmd: cat /etc/resolv.conf
       register: resolv_conf
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display DNS configuration
       ansible.builtin.debug:
@@ -472,7 +472,7 @@
       register: external_dns_test
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display external DNS resolution result
       ansible.builtin.debug:
@@ -494,7 +494,7 @@
       register: mgmt_ping
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify management node connectivity
       ansible.builtin.assert:
@@ -513,7 +513,7 @@
       register: containerd_k8s_containers
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display containerd Kubernetes container count
       ansible.builtin.shell:
@@ -524,7 +524,7 @@
       register: containerd_container_count
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display containerd Kubernetes namespace status
       ansible.builtin.debug:
@@ -542,7 +542,7 @@
       register: kubelet_errors
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display recent kubelet errors
       ansible.builtin.debug:
@@ -568,7 +568,7 @@
             2>/dev/null || true
       register: kubelet_hostname_override
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display kubelet hostname configuration
       ansible.builtin.debug:
@@ -592,7 +592,7 @@
       register: api_readyz
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify Kubernetes API readyz
       ansible.builtin.assert:
@@ -653,7 +653,7 @@
         cmd: kubectl version --client
       register: kubectl_version
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display kubectl version
       ansible.builtin.debug:
@@ -668,7 +668,7 @@
         cmd: kubectl get nodes -o wide
       register: kubernetes_nodes
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display Kubernetes nodes
       ansible.builtin.debug:
@@ -680,7 +680,7 @@
       register: worker1_ready
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Check worker-node2 status
       ansible.builtin.command:
@@ -688,7 +688,7 @@
       register: worker2_ready
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify worker-node1 is Ready
       ansible.builtin.assert:
@@ -721,7 +721,7 @@
           -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'
       register: worker1_ip
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Get worker-node2 InternalIP
       ansible.builtin.command:
@@ -730,7 +730,7 @@
           -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}'
       register: worker2_ip
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Verify worker node IP addresses
       ansible.builtin.assert:
@@ -753,7 +753,7 @@
       loop: "{{ worker_nodes }}"
       register: worker_node_descriptions
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Check worker node scheduling state
       ansible.builtin.command:
@@ -761,7 +761,7 @@
       loop: "{{ worker_nodes }}"
       register: worker_unschedulable
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display worker scheduling state
       ansible.builtin.debug:
@@ -781,7 +781,7 @@
         cmd: kubectl get pods -n kube-system -o wide
       register: kube_system_pods
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display kube-system pods
       ansible.builtin.debug:
@@ -796,7 +796,7 @@
       register: calico_nodes
       changed_when: false
       failed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display Calico node status
       ansible.builtin.debug:
@@ -811,7 +811,7 @@
         cmd: kubectl get pods -n kube-system -l k8s-app=kube-proxy -o wide
       register: kube_proxy
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display kube-proxy status
       ansible.builtin.debug:
@@ -826,7 +826,7 @@
         cmd: kubectl get pods -n kube-system -l k8s-app=kube-dns -o wide
       register: coredns
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display CoreDNS status
       ansible.builtin.debug:
@@ -841,7 +841,7 @@
         cmd: kubectl get svc kubernetes -o wide
       register: kubernetes_service
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display Kubernetes API Service
       ansible.builtin.debug:
@@ -859,7 +859,7 @@
           -o wide
       register: kubernetes_endpoints
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display Kubernetes API endpoints
       ansible.builtin.debug:
@@ -875,7 +875,7 @@
       loop: "{{ worker_nodes }}"
       register: worker_podcidrs
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Display worker PodCIDR
       ansible.builtin.debug:
@@ -895,7 +895,7 @@
           grep -v '^Ready$' || true
       register: non_ready_nodes
       changed_when: false
-      check_mode: yes
+      check_mode: false
 
     - name: Assert all Kubernetes nodes are Ready
       ansible.builtin.assert:
