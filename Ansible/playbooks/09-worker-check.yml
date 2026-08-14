@@ -73,20 +73,35 @@
     # 2. Required Kubernetes software
     # ============================================================
 
+    - name: Check containerd.io package
+      ansible.builtin.command:
+        cmd: dpkg-query -W -f='${Status}' containerd.io
+      register: containerd_io_package
+      changed_when: false
+      failed_when: false
+      ignore_errors: true
+
     - name: Check containerd package
-      ansible.builtin.shell:
-        cmd: |
-          dpkg-query -W -f='${Status}' containerd.io 2>/dev/null || \
-          dpkg-query -W -f='${Status}' containerd 2>/dev/null || \
-          echo "not-installed"
+      ansible.builtin.command:
+        cmd: dpkg-query -W -f='${Status}' containerd
       register: containerd_package
       changed_when: false
       failed_when: false
+      ignore_errors: true
+      when: containerd_io_package.rc != 0 or "'install ok installed' not in containerd_io_package.stdout"
+
+    - name: Set containerd package fact
+      ansible.builtin.set_fact:
+        containerd_installed: >-
+          {{
+            (containerd_io_package.rc == 0 and 'install ok installed' in containerd_io_package.stdout) or
+            (containerd_package.rc == 0 and 'install ok installed' in containerd_package.stdout)
+          }}
 
     - name: Verify containerd package
       ansible.builtin.assert:
         that:
-          - "'install ok installed' in containerd_package.stdout"
+          - containerd_installed | bool
         fail_msg: "containerd package is not installed correctly."
         success_msg: "containerd package is installed."
 
