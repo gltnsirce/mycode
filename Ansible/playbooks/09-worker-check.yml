@@ -73,70 +73,30 @@
     # 2. Required Kubernetes software
     # ============================================================
 
-    - name: Check containerd.io package
-      ansible.builtin.command:
-        cmd: dpkg-query -W -f='${Status}' containerd.io
-      register: containerd_io_package
-      changed_when: false
-      failed_when: false
-      ignore_errors: true
-      check_mode: yes
-
-    - name: Check containerd package
-      ansible.builtin.command:
-        cmd: dpkg-query -W -f='${Status}' containerd
-      register: containerd_package
-      changed_when: false
-      failed_when: false
-      ignore_errors: true
-      check_mode: yes
-      when: containerd_io_package.rc != 0 or "'install ok installed' not in containerd_io_package.stdout"
-
-    - name: Set containerd package fact
-      ansible.builtin.set_fact:
-        containerd_installed: >-
-          {{
-            (containerd_io_package.rc == 0 and 'install ok installed' in containerd_io_package.stdout) or
-            (containerd_package.rc == 0 and 'install ok installed' in containerd_package.stdout)
-          }}
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+        manager: auto
+      check_mode: false
 
     - name: Verify containerd package
       ansible.builtin.assert:
         that:
-          - containerd_installed | bool
-        fail_msg: "containerd package is not installed correctly."
+          - "'containerd.io' in ansible_facts.packages or 'containerd' in ansible_facts.packages"
+        fail_msg: "Neither containerd.io nor containerd package is installed."
         success_msg: "containerd package is installed."
-
-    - name: Check kubeadm package
-      ansible.builtin.command:
-        cmd: dpkg-query -W -f='${Status}' kubeadm
-      register: kubeadm_package
-      changed_when: false
-      failed_when: false
-      check_mode: yes
 
     - name: Verify kubeadm package
       ansible.builtin.assert:
         that:
-          - kubeadm_package.rc == 0
-          - "'install ok installed' in kubeadm_package.stdout"
-        fail_msg: "kubeadm package is not installed correctly."
+          - "'kubeadm' in ansible_facts.packages"
+        fail_msg: "kubeadm package is not installed."
         success_msg: "kubeadm package is installed."
-
-    - name: Check kubelet package
-      ansible.builtin.command:
-        cmd: dpkg-query -W -f='${Status}' kubelet
-      register: kubelet_package
-      changed_when: false
-      failed_when: false
-      check_mode: yes
 
     - name: Verify kubelet package
       ansible.builtin.assert:
         that:
-          - kubelet_package.rc == 0
-          - "'install ok installed' in kubelet_package.stdout"
-        fail_msg: "kubelet package is not installed correctly."
+          - "'kubelet' in ansible_facts.packages"
+        fail_msg: "kubelet package is not installed."
         success_msg: "kubelet package is installed."
 
     # ============================================================
