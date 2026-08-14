@@ -44,7 +44,7 @@
         msg:
           - "Worker hostname: {{ inventory_hostname }}"
           - "Expected IP: {{ expected_worker_ips[inventory_hostname] }}"
-          - "Detected IPv4 addresses: {{ ansible_all_ipv4_addresses | join(', ') }}"
+          - "Detected IPv4 addresses: {{ ansible_facts['all_ipv4_addresses'] | join(', ') }}"
           - "Architecture: {{ ansible_facts['architecture'] }}"
           - "OS: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
           - "Kernel: {{ ansible_facts['kernel'] }}"
@@ -61,7 +61,7 @@
     - name: Verify worker IP
       ansible.builtin.assert:
         that:
-          - expected_worker_ips[inventory_hostname] in ansible_all_ipv4_addresses
+          - expected_worker_ips[inventory_hostname] in ansible_facts['all_ipv4_addresses']
         fail_msg: >-
           Expected IP {{ expected_worker_ips[inventory_hostname] }}
           was not found on {{ inventory_hostname }}.
@@ -74,8 +74,11 @@
     # ============================================================
 
     - name: Check containerd package
-      ansible.builtin.command:
-        cmd: dpkg-query -W -f='${Status}' containerd
+      ansible.builtin.shell:
+        cmd: |
+          dpkg-query -W -f='${Status}' containerd.io 2>/dev/null || \
+          dpkg-query -W -f='${Status}' containerd 2>/dev/null || \
+          echo "not-installed"
       register: containerd_package
       changed_when: false
       failed_when: false
@@ -83,7 +86,6 @@
     - name: Verify containerd package
       ansible.builtin.assert:
         that:
-          - containerd_package.rc == 0
           - "'install ok installed' in containerd_package.stdout"
         fail_msg: "containerd package is not installed correctly."
         success_msg: "containerd package is installed."
