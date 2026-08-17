@@ -1,0 +1,71 @@
+---
+- name: Migrate containerd registry configuration to hosts.toml format
+  hosts: k8s_workers
+  become: true
+  vars:
+    certs_dir: "/etc/containerd/certs.d"
+
+  tasks:
+    - name: Ensure certs.d subdirectories exist
+      ansible.builtin.file:
+        path: "{{ certs_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "registry.k8s.io"
+        - "docker.io"
+
+    - name: Enable config_path in config.toml
+      ansible.builtin.lineinfile:
+        path: /etc/containerd/config.toml
+        regexp: '^\s*config_path\s*=.*'
+        line: '      config_path = "/etc/containerd/certs.d"'
+        state: present
+
+    - name: Remove deprecated mirrors block from config.toml
+      ansible.builtin.blockinfile:
+        path: /etc/containerd/config.toml
+        marker: "# {mark} ANSIBLE MANAGED DEPRECATED MIRRORS"
+        state: absent
+        block: |
+          [plugins."io.containerd.cri.v1.images".registry.mirrors]
+            [plugins."io.containerd.cri.v1.images".registry.mirrors."registry.k8s.io"]
+              endpoint = ["https://k8s.dockerproxy.net"]
+            [plugins."io.containerd.cri.v1.images".registry.mirrors."docker.io"]
+              endpoint = [
+                "https://dockerproxy.net",
+                "https://docker.m.daocloud.io",
+                "https://docker.nju.edu.cn"
+              ]
+
+    - name: Configure registry.k8s.io hosts.toml
+      ansible.builtin.copy:
+        dest: "{{ certs_dir }}/registry.k8s.io/hosts.toml"
+        mode: '0644'
+        content: |
+          server = "https://registry.k8s.io"
+
+          [host."https://k8s.dockerproxy.net"]
+            capabilities = ["pull", "resolve"]
+
+    - name: Configure docker.io hosts.toml
+      ansible.builtin.copy:
+        dest: "{{ certs_dir }}/docker.io/hosts.toml"
+        mode: '0644'
+        content: |
+          server = "https://registry-1.docker.io"
+
+          [host."https://dockerproxy.net"]
+            capabilities = ["pull", "resolve"]
+
+          [host."https://docker.m.daocloud.io"]
+            capabilities = ["pull", "resolve"]
+
+          [host."https://docker.nju.edu.cn"]
+            capabilities = ["pull", "resolve"]
+
+    - name: Restart containerd service
+      ansible.builtin.systemd:
+        name: containerd
+        state: restarted
+        daemon_reload: true
