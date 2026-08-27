@@ -12,11 +12,11 @@ def check_port(ip, port, timeout=3):
         sock.close()
         
         if result == 0:
-            return True, f"端口 {port} 可达"
+            return True, f"The port:{port} is reachable."
         else:
-            return False, f"端口 {port} 不可达 (错误码: {result})"
+            return False, f"The port:{port} is unreachable. (the exception is {result})"
     except Exception as e:
-        return False, f"连接失败: {str(e)}"
+        return False, f"Connection failed: {str(e)}"
 
 # 使用示例
 ip = input("please type the ip address:")
