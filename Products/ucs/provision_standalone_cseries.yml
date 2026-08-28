@@ -1,0 +1,69 @@
+---
+- name: Standalone Cisco C-Series RAID Configuration and OS Installation
+  hosts: c_series_servers
+  gather_facts: false
+
+  tasks:
+    - name: 1. 检查 CIMC 连通性并获取当前硬件状态
+      cisco.imcs.imcs_facts:
+        server_ip: "{{ cimc_ip }}"
+        username: "{{ cimc_user }}"
+        password: "{{ cimc_pass }}"
+      register: imcs_info
+
+    - name: 2. 配置本地 RAID 阵列 (例如使用槽位 1、2 的物理盘创建 RAID1 Virtual Drive)
+      cisco.imcs.imcs_raid_storage:
+        server_ip: "{{ cimc_ip }}"
+        username: "{{ cimc_user }}"
+        password: "{{ cimc_pass }}"
+        state: present
+        controller_id: "SLOT-1"         # RAID 控制器编号，可通过 imcs_facts 获得
+        raid_level: "1"                 # RAID 级别: 0, 1, 5, 6, 10
+        virtual_drive_name: "OS_RAID1"
+        drive_group:
+          - "1"                         # 物理盘 Slot 1
+          - "2"                         # 物理盘 Slot 2
+        write_policy: "Write Back Good BBU"
+        access_policy: "Read Write"
+      register: raid_result
+
+    - name: 3. 挂载远程 NFS 路径下的系统安装 ISO 镜像 (vMedia)
+      cisco.imcs.imcs_vmedia:
+        server_ip: "{{ cimc_ip }}"
+        username: "{{ cimc_user }}"
+        password: "{{ cimc_pass }}"
+        state: present
+        volume_name: "OS-Installer-CD"
+        mount_protocol: "nfs"           # 可选: nfs, cifs, http, https
+        remote_share: "{{ iso_nfs_share }}"
+        remote_file: "{{ iso_filename }}"
+      register: vmedia_result
+
+    - name: 4. 设置下次开机启动顺序 (优先选择虚拟光驱 vMedia)
+      cisco.imcs.imcs_boot_precision:
+        server_ip: "{{ cimc_ip }}"
+        username: "{{ cimc_user }}"
+        password: "{{ cimc_pass }}"
+        reboot_on_reconfig: false
+        boot_devices:
+          - name: "vMedia-CD"
+            type: "virtual-drive"
+            subtype: "cimc-mapped-dvd"
+            order: 1
+          - name: "Local-RAID"
+            type: "storage"
+            subtype: "local-hdd"
+            order: 2
+
+    - name: 5. 执行强制电源循环以重启服务器进入 ISO 安装
+      cisco.imcs.imcs_power_cycle:
+        server_ip: "{{ cimc_ip }}"
+        username: "{{ cimc_user }}"
+        password: "{{ cimc_pass }}"
+        power_command: "cycle-immediate"
+
+    - name: 输出操作摘要
+      ansible.builtin.debug:
+        msg: >
+          服务器 {{ inventory_hostname }} ({{ cimc_ip }}) 已经成功下发 RAID1 配置，
+          挂载 ISO [{{ iso_filename }}] 并成功重新触发上电。安装程序正在运行...
