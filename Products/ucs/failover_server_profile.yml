@@ -1,0 +1,106 @@
+---
+- name: Cisco Intersight Server Profile Hardware Failover
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars_files:
+    - vars/intersight_credentials.yml
+
+  vars:
+    # 填入需要调度的目标 Server Profile 名称
+    server_profile_name: "SP-Prod-DB-01"
+    # 填入新的备用物理服务器序列号 (适用于 B/C/S/X 系列)
+    spare_server_serial: "FCH2402SPAR"
+
+  tasks:
+    - name: 1. 查询目标 Server Profile 的详细信息 (获取其 MOID)
+      cisco.intersight.intersight_rest_api:
+        api_key_id: "{{ api_key_id }}"
+        api_private_key_file: "{{ api_private_key_file }}"
+        api_uri: "{{ api_uri }}"
+        resource_path: "/server/Profiles"
+        query_params:
+          filter: "Name eq '{{ server_profile_name }}'"
+      register: sp_query
+
+    - name: 断言校验 Server Profile 是否存在
+      ansible.builtin.assert:
+        that:
+          - sp_query.api_response.Results | length > 0
+        fail_msg: "未找到名称为 {{ server_profile_name }} 的 Server Profile！"
+
+    - name: 提取 Server Profile MOID
+      ansible.builtin.set_fact:
+        sp_moid: "{{ sp_query.api_response.Results[0].Moid }}"
+
+    - name: 2. 解绑逻辑 - 将 Server Profile 从故障物理节点脱离
+      cisco.intersight.intersight_rest_api:
+        api_key_id: "{{ api_key_id }}"
+        api_private_key_file: "{{ api_private_key_file }}"
+        api_uri: "{{ api_uri }}"
+        resource_path: "/server/Profiles/{{ sp_moid }}"
+        method: post
+        update_method: patch
+        data:
+          AssignedServer: null
+          ServerAssignmentMode: "None"
+      register: unbind_resp
+
+    - name: 确认解绑完成
+      ansible.builtin.debug:
+        msg: "Server Profile [{{ server_profile_name }}] 已成功从原故障物理节点解绑。"
+
+    - name: 3. 查询备用物理服务器的 MOID (通过序列号匹配)
+      cisco.intersight.intersight_rest_api:
+        api_key_id: "{{ api_key_id }}"
+        api_private_key_file: "{{ api_private_key_file }}"
+        api_uri: "{{ api_uri }}"
+        resource_path: "/compute/PhysicalSummaries"
+        query_params:
+          filter: "Serial eq '{{ spare_server_serial }}'"
+      register: spare_server_query
+
+    - name: 断言校验备用服务器是否存在
+      ansible.builtin.assert:
+        that:
+          - spare_server_query.api_response.Results | length > 0
+        fail_msg: "未找到序列号为 {{ spare_server_serial }} 的备用物理节点！"
+
+    - name: 提取备用节点 MOID 与对象类型
+      ansible.builtin.set_fact:
+        spare_moid: "{{ spare_server_query.api_response.Results[0].Moid }}"
+        spare_source_object_type: "{{ spare_server_query.api_response.Results[0].SourceObjectType }}"
+
+    - name: 4. 绑定逻辑 - 将 Server Profile 绑定至备用物理节点
+      cisco.intersight.intersight_rest_api:
+        api_key_id: "{{ api_key_id }}"
+        api_private_key_file: "{{ api_private_key_file }}"
+        api_uri: "{{ api_uri }}"
+        resource_path: "/server/Profiles/{{ sp_moid }}"
+        method: post
+        update_method: patch
+        data:
+          ServerAssignmentMode: "Static"
+          AssignedServer:
+            Moid: "{{ spare_moid }}"
+            ObjectType: "{{ spare_source_object_type }}"
+      register: bind_resp
+
+    - name: 5. 部署下发 - 触发配置下发与备用节点上电
+      cisco.intersight.intersight_rest_api:
+        api_key_id: "{{ api_key_id }}"
+        api_private_key_file: "{{ api_private_key_file }}"
+        api_uri: "{{ api_uri }}"
+        resource_path: "/server/Profiles/{{ sp_moid }}"
+        method: post
+        update_method: patch
+        data:
+          Action: "Deploy"
+      register: deploy_resp
+
+    - name: 输出故障切换最终结果
+      ansible.builtin.debug:
+        msg: >
+          故障替换任务已成功下发！
+          Server Profile [{{ server_profile_name }}] 正部署至备用节点 [{{ spare_server_serial }}]。
