@@ -1,0 +1,12 @@
+# ==========================
+# Production Database Servers
+# ==========================
+192.168.1.10
+192.168.1.11
+
+# Application Nodes (Hostnames / FQDN)
+app-server-01.prod.net
+app-server-02.prod.net
+
+# Standalone management IP
+10.0.100.55
