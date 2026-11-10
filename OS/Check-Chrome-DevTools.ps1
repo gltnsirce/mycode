@@ -21,7 +21,7 @@
 # - Direct run the command: powershell -ExecutionPolicy Bypass -File ".\Check-Chrome-DevTools.ps1"
 # or
 # - Run the command "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass" to setup the exceution policy.
-# - Then directly run the script/
+# - Then run this script.
 #
 # IMPORTANT:
 # Close Chrome before running to allow modifications.
