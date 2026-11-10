@@ -13,6 +13,9 @@
 # 7. Recheck settings after modification
 # 8. Report settings requiring manual verification
 #
+# Author: GltnsRice
+# Email: yiming.yin@outlook.com
+#
 # How to run this script without administrator permission:
 # - Direct run the command: powershell -ExecutionPolicy Bypass -File ".\check_chrome_devtool.ps1"
 # or
