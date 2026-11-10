@@ -17,9 +17,11 @@
 # Email: yiming.yin@outlook.com
 #
 # How to run this script without administrator permission:
-# - Direct run the command: powershell -ExecutionPolicy Bypass -File ".\check_chrome_devtool.ps1"
+# - Change the working directory to the location where the script saved.
+# - Direct run the command: powershell -ExecutionPolicy Bypass -File ".\Check-Chrome-DevTools.ps1"
 # or
-# - Run the command "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass" to setup the exceution policy, then direct run the script/
+# - Run the command "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass" to setup the exceution policy.
+# - Then directly run the script/
 #
 # IMPORTANT:
 # Close Chrome before running to allow modifications.
